@@ -56,12 +56,15 @@ class AssetAllocation:
         
         self.start_weights = np.full(self.num_assets, 1 / self.num_assets)
         self.constraints = {'type': 'eq', 'fun': lambda x: np.sum(x) - 1}  # the assets summation is required to be = 1
-        self.bounds = tuple((0.1, 1) for _ in range(self.num_assets))  #each asset will represent at least 1% of the portfolio
+        self.bounds = tuple((0.01, 1) for _ in range(self.num_assets))  #each asset will represent at least 1% of the portfolio
         
         self.rf = rf
         self.rf_daily = rf / 252
         
-        self.portfolio_value = self.asset_prices.dot(self.start_weights) 
+        
+        
+        
+
         self.portfolio_market_gap = self.asset_returns - self.benchmark_returns.values
         self.downside = self.portfolio_market_gap[self.portfolio_market_gap < 0].fillna(0).std()
         self.upside = self.portfolio_market_gap[self.portfolio_market_gap > 0].fillna(0).std()
@@ -81,7 +84,7 @@ class AssetAllocation:
 
     @staticmethod
     def greeks():
-        """Calculates alpha and beta of the portfolio"""
+        """Calculates alpha and beta indicators of the portfolio"""
         matrix = np.cov(self.asset_returns, self.benchmark_returns)
         beta = matrix[0, 1] / matrix[1, 1]
      
@@ -89,6 +92,19 @@ class AssetAllocation:
         alpha = alpha * 252
         
         return beta, alpha
+    
+    @staticmethod
+    def get_optport_value_n_returns(optimized_weights, asset_prices):
+        """
+        Calculates the portfolio volatility given asset weights and covariance matrix.
+
+        :param weights: Weights of the assets in the portfolio.
+        :param cov_matrix: Covariance matrix of asset returns.
+        :return: Portfolio volatility.
+        """        
+        portfolio_value = asset_prices.dot(optimized_weights)
+        
+        return  portfolio_value, portfolio_value.pct_change().dropna()
     
     
     def neg_sharpe_ratio(self, weights):
@@ -103,6 +119,7 @@ class AssetAllocation:
         """
         sharpe_ratio = (np.dot(weights, self.average_asset_returns) - self.rf_daily) / self.portfolio_volatility(weights, self.asset_cov_matrix)
         return -sharpe_ratio  
+    
     
     def optimize_max_sharpe(self):
         """
@@ -135,6 +152,7 @@ class AssetAllocation:
         portfolio_omega = np.dot(weights, self.assets_omega)
         
         return -portfolio_omega
+    
 
     def optimize_for_omega(self) :
         """
@@ -145,7 +163,7 @@ class AssetAllocation:
         
         Returns:
             optimized_weights (np.ndarray): The asset weights that maximize the Omega Ratio.
-            optimized_sharpe (float): The maximum Omega Ratio achieved by the optimized portfolio.
+            optimized_omega (float): The maximum Omega Ratio achieved by the optimized portfolio.
     
         Method used:
             'SLSQP' - Sequential Least Squares Programming, a gradient-based optimization algorithm
@@ -156,55 +174,64 @@ class AssetAllocation:
         optimized_omega = -result.fun
         
         return optimized_weights, optimized_omega
+    
 
-    def portfolio_var(self, weights):
+    def portfolio_var(self, weights, empirical= True):
         """
-        Calcula el Value at Risk (VaR) del portafolio utilizando el enfoque de varianza-covarianza.
+        Calculates Value at Risk (VaR) of the portfolio using the empirical data if :param empirical: = True. If set to 'False' a variance-covariance approach its taken and normality in the distribution on the returns is assumed.
 
-        :param weights: Pesos de los activos en el portafolio.
-        :return: VaR del portafolio.
+        :param weights: Weights of the assets in the portfolio.
+        :return: Portfolio's Value at Risk.
         """
-        assets_average_return = np.dot(weights, self.average_asset_returns)
-        portfolio_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
-        
         confidence_level = 0.05
         
-        # VaR as standard deviation multiplied by th value Z of the normal distribution
-        VaR = norm.ppf(1 - confidence_level) * portfolio_volatility
+        if empirical == False:
+            assets_average_return = np.dot(weights, self.average_asset_returns)
+            portfolio_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
+            # VaR as standard deviation multiplied by th value Z of the normal distribution
+            VaR = norm.ppf(1 - confidence_level) * portfolio_volatility
+           
+        else:
+            #get percentile associated to the confidence level of the portfolios historical returns
+            portfolio_value = self.asset_prices.dot(weights)
+            portfolio_rend = portfolio_value.pct_change().dropna()
+            VaR = portfolio_rend.quantile(confidence_level)
         
+               
         return VaR 
 
-#    
-#    def portfolio_var_emp(self, weights):
-#        """
-#        Calcula el Value at Risk (VaR) del portafolio utilizando el enfoque de varianza-covarianza.
-#
-#        :param weights: Pesos de los activos en el portafolio.
-#        :return: VaR del portafolio.
-#        """
-#        
-#        np.dot(weights.T, weights)
-#        portfolio_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
-#        
-#        confidence_level = 0.05
-#        
-#        # VaR as standard deviation multiplied by th value Z of the normal distribution
-#        VaR = norm.ppf(1 - confidence_level) * portfolio_volatility
-#        
-#        return VaR    
-#    
-#    
-    def minimize_var(self):
+  
+    def minimize_var(self, empirical= True ):
         """
-        Optimiza los pesos de los activos para minimizar el Value at Risk (VaR) del portafolio.
+        Optimizes the weights of the assets in the portfolio.
         
         :return: Pesos optimizados del portafolio.
         """
-        opts = sco.minimize(self.portfolio_var, self.start_weights, method='SLSQP', bounds=self.bounds, constraints=self.constraints)
-        optimized_weights = opts.x
-        optimized_VaR = opts.fun
+        if empirical == True:
+            
+            opts = sco.minimize(self.portfolio_var, self.start_weights,args=(empirical), method='SLSQP', bounds=self.bounds, constraints=self.constraints)
+            optimized_weights = opts.x
+            optimized_VaR = opts.fun
+            
+        else:
+            opts = sco.minimize(self.portfolio_var, self.start_weights, args=(empirical),method='SLSQP', bounds=self.bounds, constraints=self.constraints)
+            optimized_weights = opts.x
+            optimized_VaR = opts.fun
         
         return optimized_weights, optimized_VaR 
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     def run_optimizations(self):
@@ -218,19 +245,24 @@ class AssetAllocation:
         # Run optimizations
         optimized_weights_sharpe, max_sharpe_value = self.optimize_max_sharpe()
         optimized_weights_omega, max_omega_value = self.optimize_for_omega()
-        optimized_weights_minvar_n, minvar_n_value = self.minimize_var()
-        
+        optimized_weights_minvar_emp, minvar_emp_value = self.minimize_var()
+        minvar_emp_port_value, minvar_emp_port_rend = self.get_optport_value_n_returns(optimized_weights_minvar_emp, self.asset_prices) #to get the lattest portfolio value  
+        optimized_weights_minvar_n, minvar_n_value = self.minimize_var(empirical = False)
+        minvar_n_port_value, minvar_n_port_rend = self.get_optport_value_n_returns(optimized_weights_minvar_n, self.asset_prices) #to get the lattest portfolio value
+      
         
 
         # Create results DataFrame
         df_optimizations = pd.DataFrame({
             'Max Sharpe Ratio Weights (%)': optimized_weights_sharpe * 100,
-            'Min VaR Ratio Weights (%)': optimized_weights_sharpe * 100,
-            'Max Omega Ratio Weights (%)': optimized_weights_omega * 100
+            'Max Omega Ratio Weights (%)': optimized_weights_omega * 100 ,           
+            'Min VaR empirical Weights (%)': optimized_weights_minvar_emp * 100,
+            'Min VaR cov-var Weights (%)': optimized_weights_minvar_n * 100
+            
         }, index=self.asset_prices.columns)  # Assuming asset names are in the columns of the asset_prices DataFrame
 
         # Adding a row for the optimization indicator values
-        df_optimizations.loc['Optimization Value'] = [max_sharpe_value, max_omega_value]
+        df_optimizations.loc['Optimization Value'] = [max_sharpe_value,max_omega_value, minvar_emp_value * minvar_emp_port_value.iloc[-1], minvar_n_value * minvar_n_port_value.iloc[-1] ]
 
         return df_optimizations    
     
@@ -294,15 +326,6 @@ class AssetAllocation:
 
 
 
-    def get_optimized_weights(self):
-        max_sharpe_weights, _ = self.optimize_max_sharpe()
-        df_optimized_weights = pd.DataFrame([max_sharpe_weights], columns=self.asset_prices.columns)
-        return df_optimized_weights  
-
-      
-    
-    
-    
     
     
     
