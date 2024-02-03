@@ -61,10 +61,6 @@ class AssetAllocation:
         self.rf = rf
         self.rf_daily = rf / 252
         
-        
-        
-        
-
         self.portfolio_market_gap = self.asset_returns - self.benchmark_returns.values
         self.downside = self.portfolio_market_gap[self.portfolio_market_gap < 0].fillna(0).std()
         self.upside = self.portfolio_market_gap[self.portfolio_market_gap > 0].fillna(0).std()
@@ -83,12 +79,16 @@ class AssetAllocation:
         return np.sqrt(np.dot(weights.T, np.dot(asset_cov_matrix, weights)))
 
     @staticmethod
-    def greeks():
-        """Calculates alpha and beta indicators of the portfolio"""
-        matrix = np.cov(self.asset_returns, self.benchmark_returns)
+    def greeks(asset_returns,benchmark_returns):
+        """
+        Calculates alpha and beta indicators of the portfolio
+        :return: tuple containing the (beta, alpha).
+        
+        """
+        matrix = np.cov(asset_returns, benchmark_returns)
         beta = matrix[0, 1] / matrix[1, 1]
      
-        alpha = self.asset_returns.mean() - beta * self.benchmark_returns.mean()
+        alpha = asset_returns.mean() - beta * benchmark_returns.mean()
         alpha = alpha * 252
         
         return beta, alpha
@@ -107,6 +107,40 @@ class AssetAllocation:
         return  portfolio_value, portfolio_value.pct_change().dropna()
     
     
+    @staticmethod
+    def optimize_portfolio(objective_function, start_weights, bounds, constraints, *args):
+        """
+        Generaliza el proceso de optimización de carteras como un método estático.
+
+        :param objective_function: La función objetivo a minimizar.
+        :param start_weights: Pesos iniciales de la cartera.
+        :param bounds: Límites para los pesos de la cartera.
+        :param constraints: Restricciones para la optimización.
+        :param args: Argumentos adicionales pasados a la función objetivo.
+        :return: Tupla con los pesos optimizados y el resultado de la optimización.
+        """
+        result = sco.minimize(objective_function, start_weights, args=args, method='SLSQP', bounds=bounds, constraints=constraints)
+        return result.x, result.fun
+    
+    def portfolio_autocorr_penalty(self, weights):
+        """
+        Calculates the autocorrelation penalty for the portfolio returns based on the given asset weights. 
+        This penalization is used to get "Smart" ratios or indicators
+    
+        :param weights: Weights of the assets in the portfolio.
+        :return: Autocorrelation penalty for the portfolio returns.
+        """
+        # Calculate portfolio returns based on weights and asset returns
+        portfolio_returns = np.dot(self.asset_returns, weights)
+
+        # Calculate the autocorrelation coefficient for the portfolio returns
+        num = len(portfolio_returns)
+        coef = np.abs(np.corrcoef(portfolio_returns[:-1], portfolio_returns[1:])[0, 1])
+        corr = [((num - x) / num) * coef**x for x in range(1, num)]
+
+        # Calculate and return the autocorrelation penalty
+        return np.sqrt(1 + 2 * np.sum(corr))
+
     def neg_sharpe_ratio(self, weights):
         """
         Calculates the negative Sharpe Ratio for a given set of asset weights.
@@ -186,7 +220,6 @@ class AssetAllocation:
         confidence_level = 0.05
         
         if empirical == False:
-            assets_average_return = np.dot(weights, self.average_asset_returns)
             portfolio_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
             # VaR as standard deviation multiplied by th value Z of the normal distribution
             VaR = norm.ppf(1 - confidence_level) * portfolio_volatility
@@ -221,18 +254,7 @@ class AssetAllocation:
         return optimized_weights, optimized_VaR 
     
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+       
     
     def run_optimizations(self):
         """
@@ -262,7 +284,7 @@ class AssetAllocation:
         }, index=self.asset_prices.columns)  # Assuming asset names are in the columns of the asset_prices DataFrame
 
         # Adding a row for the optimization indicator values
-        df_optimizations.loc['Optimization Value'] = [max_sharpe_value,max_omega_value, minvar_emp_value * minvar_emp_port_value.iloc[-1], minvar_n_value * minvar_n_port_value.iloc[-1] ]
+        df_optimizations.loc['Optimization Value'] = [max_sharpe_value,max_omega_value, minvar_emp_value * minvar_emp_port_value.iloc[-1], minvar_n_value * minvar_n_port_value.iloc[-1] * -1]
 
         return df_optimizations    
     
