@@ -4,7 +4,7 @@ import numpy as np
 import scipy.optimize as sco
 from scipy.stats import norm
 
-class AssetDataDownloader:
+class DataDownloader:
     
     def __init__(self):
         """
@@ -36,12 +36,13 @@ class AssetDataDownloader:
 
 class AssetAllocation:
     
-    def __init__(self, asset_prices, benchmark_prices, rf):
+    def __init__(self, asset_prices, benchmark_prices, rf, bounds = None):
         """
         Initializes the AssetAllocation object with asset and benchmark prices.
         :param asset_prices: DataFrame with rows as dates and columns as asset tickers, containing the prices of each asset.
         :param benchmark_prices: DataFrame with rows as dates and a column with the benchmark ticker, containing the Adjusted close price.
         :param rf: Risk Free Rate for the given period
+        :param bounds: Optional. A tuple of tuples specifying the minimum and maximum weights for each asset. Default is (0.01, 1) for each asset (minimun 1% and maximum 10%).
         """
         self.asset_prices= asset_prices
         self.num_assets = len(asset_prices.columns)
@@ -56,8 +57,10 @@ class AssetAllocation:
         
         self.start_weights = np.full(self.num_assets, 1 / self.num_assets)
         self.constraints = {'type': 'eq', 'fun': lambda x: np.sum(x) - 1}  # the assets summation is required to be = 1
-        self.bounds = tuple((0.01, 1) for _ in range(self.num_assets))  #each asset will represent at least 1% of the portfolio
-        
+        if bounds is not None:
+            self.bounds = bounds
+        else:
+            self.bounds = tuple((0.01, 1) for _ in range(self.num_assets)) # Default limits for every asset (min 1% - max 100%)
         self.rf = rf
         self.rf_daily = rf / 252
         
@@ -115,7 +118,7 @@ class AssetAllocation:
         - weights: Array of portfolio weights to be checked.
 
         Returns:
-        - True if the sum of weights is approximately equal to 1, False otherwise.
+        - Boolean: True if the sum of weights is approximately equal to 1, False otherwise.
         """
         return np.abs(1 - np.sum(weights)) < 1e-5
 
@@ -149,8 +152,8 @@ class AssetAllocation:
         - start_weights: Initial guess for the portfolio weights, used to determine the number
           of assets in the portfolio.
         - bounds: A sequence of (min, max) pairs for each weight, defining the bounds on
-          the variables. Use None for one of min or max when there is no bound in that direction.
-        - args: Additional arguments to pass to the objective function.
+          the variables.
+        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, for example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
         - n_simulations: The number of random weight combinations to simulate.
 
         Returns:
@@ -168,11 +171,12 @@ class AssetAllocation:
         does not guarantee finding the global minimum but can provide a good approximation, especially
         when the number of simulations (n_simulations) is large.
         """
+        
         num_assets = len(start_weights)
         best_value = float('inf')  #to minimize
         best_weights = np.zeros(num_assets)        
         alpha = np.ones(num_assets)
-
+        #Montecarlo Simulation
         for _ in range(n_simulations):
             weights = np.random.dirichlet(alpha)
 
@@ -185,7 +189,69 @@ class AssetAllocation:
                 best_weights = weights
 
         return best_weights, best_value           
-                              
+
+    
+
+    @staticmethod
+    def optimize_genetic(objective_function, start_weights, bounds, constraints, population_size=100, generations=200, crossover_rate=0.7, mutation_rate=0.1, args=()):
+        num_assets = len(start_weights)
+
+        # Function to create an individual(Solution)
+        def create_individual():
+            return np.random.uniform(low=[b[0] for b in bounds], high=[b[1] for b in bounds], size=num_assets)
+
+        # Function to evaluate Fitness
+        def calculate_fitness(individual):
+            # Asegurarse de que los pesos sumen 1
+            individual = individual / np.sum(individual)
+            return objective_function(individual, *args)
+
+        # Function to cross 2 fathers to create a son
+        def crossover(parent1, parent2):
+            if np.random.rand() < crossover_rate:
+                crossover_point = np.random.randint(1, num_assets)
+                child = np.concatenate([parent1[:crossover_point], parent2[crossover_point:]])
+            else:
+                child = parent1.copy()
+            return child
+
+        # Mutation Function
+        def mutate(individual):
+            for i in range(num_assets):
+                if np.random.rand() < mutation_rate:
+                    individual[i] = np.random.uniform(bounds[i][0], bounds[i][1])
+            return individual
+
+        # Create initial population
+        population = [create_individual() for _ in range(population_size)]
+        for _ in range(generations):
+            # Evaluate fitness
+            fitness = np.array([calculate_fitness(ind) for ind in population])
+            #selec most fit population
+            selection_probs = fitness / fitness.sum()
+            selected_indices = np.random.choice(range(population_size), size=population_size, replace=True, p=selection_probs)
+            selected_individuals = [population[i] for i in selected_indices]
+
+            # Create new generation
+            next_generation = []
+            for i in range(0, population_size, 2):
+                parent1, parent2 = selected_individuals[i], selected_individuals[i+1]
+                child1 = mutate(crossover(parent1, parent2))
+                child2 = mutate(crossover(parent1, parent2))
+                next_generation.extend([child1, child2])
+
+            population = next_generation
+
+        # Find best individual from last generation
+        final_fitness = np.array([calculate_fitness(ind) for ind in population])
+        best_index = np.argmin(final_fitness)
+        best_individual = population[best_index]
+
+        # Asegurarse de que los pesos del mejor individuo sumen 1
+        best_individual = best_individual / np.sum(best_individual)
+
+        return best_individual, objective_function(best_individual)
+    
             
     @staticmethod
     def optimize_SLSQP(objective_function, start_weights, bounds, constraints, args=()):
@@ -206,7 +272,7 @@ class AssetAllocation:
         - constraints: A dictionary or a list of dictionaries specifying the constraints
           the solution must satisfy. Each dictionary contains fields 'type' (equality or inequality)
           and 'fun' that is a function defining the constraint.
-        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, dor example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
+        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, for example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
 
         Returns:
         - optimized_weights: The optimized weights for the portfolio that minimize the objective
@@ -231,6 +297,80 @@ class AssetAllocation:
 
         return optimized_weights, optimized_value
 
+    @staticmethod
+    def optimize_gradient(objective_function, start_weights, bounds, learning_rate=0.01, max_iters=1000, tol=1e-6, args=()):
+        """
+        Optimizes portfolio weights using the gradient descent method.
+
+        Parameters:
+        - objective_function: The function to be minimized.
+        - start_weights: Initial guess for the portfolio weights.
+        - bounds: A sequence of (min, max) pairs for each weight, defining the bounds.
+        - args: Additional arguments to pass to the objective function.
+        - learning_rate: Step size for each iteration.
+        - max_iters: Maximum number of iterations to perform.
+        - tol: Tolerance for the stopping criterion. The algorithm stops if the improvement between two iterations is less than this value.
+
+        Returns:
+        - weights: Optimized portfolio weights.
+        """
+        weights = np.array(start_weights)
+        prev_val = float('inf')
+
+        for _ in range(max_iters):
+            # Calculate the gradient of the objective function
+            grad = AssetAllocation.calculate_gradient(objective_function, weights, args)
+
+            # Update weights - move in the opposite direction of the gradient
+            new_weights = weights - learning_rate * grad
+
+            # Apply bounds
+            new_weights = np.clip(new_weights, a_min=[b[0] for b in bounds], a_max=[b[1] for b in bounds])
+
+            # Ensure weights sum to 1 
+            new_weights /= np.sum(new_weights)
+
+            # Check for convergence
+            new_val = objective_function(new_weights, *args)
+            if np.abs(new_val - prev_val) < tol:
+                break
+
+            weights = new_weights
+            prev_val = new_val
+
+        return weights, objective_function(weights)
+
+    @staticmethod
+    def calculate_gradient(objective_function, weights, args=()):
+        """
+        Calculates the gradient of the objective function with respect to the weights.
+        
+        Parameters:
+        - objective_function: The function for which the gradient is calculated.
+        - weights: Current weights at which the gradient is evaluated.
+        - args: Additional arguments to the objective function.
+
+        Returns:
+        - grad: The gradient of the objective function at the given weights.
+        """
+        epsilon = 1e-8  # Small change to compute the numerical gradient
+        grad = np.zeros_like(weights)
+
+        for i in range(len(weights)):
+            weights_plus = np.array(weights)
+            weights_minus = np.array(weights)
+            weights_plus[i] += epsilon
+            weights_minus[i] -= epsilon
+
+            # Evaluate function at neighboring points
+            f_plus = objective_function(weights_plus, *args)
+            f_minus = objective_function(weights_minus, *args)
+
+            # Use central difference to approximate gradient
+            grad[i] = (f_plus - f_minus) / (2 * epsilon)
+
+        return grad    
+ 
     
     def portfolio_autocorr_penalty(self, weights):
         """
@@ -297,135 +437,217 @@ class AssetAllocation:
         
                
         return VaR 
-    
 
-    def run_SLSQP_optimizations(asset_allocation_instance):
-        # Define los nombres de las optimizaciones
+    
+    def Optimize_Portfolio(asset_allocation_instance, method = "Montecarlo", **kwargs):
         optimization_names = ["Max Sharpe", "Max Omega", "Min VaR (Empirical)", "Min VaR (Parametric)"]
-    
-        # Inicializa listas vacías para almacenar los resultados
         optimized_weights = []
-        optimized_values = []
+        optimized_values = []  
+        
+        if method == "SLSQP":
+            # Optimize for Sharpe
+            weights_sharpe, value_sharpe = AssetAllocation.optimize_SLSQP(
+                asset_allocation_instance.neg_sharpe_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints
+            )
+            optimized_weights.append(weights_sharpe)
+            optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
+        
+            # Optimize for Omega
+            weights_omega, value_omega = AssetAllocation.optimize_SLSQP(
+                asset_allocation_instance.neg_omega_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints
+            )
+            optimized_weights.append(weights_omega)
+            optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
+        
+            # Minimize the VaR with empirical approach 
+            weights_var_empirical, value_var_empirical = AssetAllocation.optimize_SLSQP(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints,
+                args=(True,)  # Empirical=True 
+            )
+            optimized_weights.append(weights_var_empirical)
+            optimized_values.append(value_var_empirical) 
+        
+            # Minimize the VaR with parametric approach (assuming normality in the returns)
+            weights_var_parametric, value_var_parametric = AssetAllocation.optimize_SLSQP(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints,
+                args=(False,)  # Empirical=False 
+            )
+            optimized_weights.append(weights_var_parametric)
+            optimized_values.append(value_var_parametric * -1) 
+        
+            # Store the results in a DataFrame 
+            results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
+            results_df['Optimized Value'] = optimized_values
+        
+            return results_df
+       
+
     
-        # Optimizar para el máximo ratio de Sharpe
-        weights_sharpe, value_sharpe = AssetAllocation.optimize_SLSQP(
-            asset_allocation_instance.neg_sharpe_ratio,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-            asset_allocation_instance.constraints
-        )
-        optimized_weights.append(weights_sharpe)
-        optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
+        elif method == "Montecarlo":
+        
+            # Optimize for Sharpe
+            weights_sharpe, value_sharpe = AssetAllocation.optimize_MonteCarlo(
+                asset_allocation_instance.neg_sharpe_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                **kwargs
+            )
+            optimized_weights.append(weights_sharpe)
+            optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
+        
+            # Optimize for Omega
+            weights_omega, value_omega = AssetAllocation.optimize_MonteCarlo(
+                asset_allocation_instance.neg_omega_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                **kwargs
+            )
+            optimized_weights.append(weights_omega)
+            optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
+        
+            # Minimize the VaR with empirical approach
+            weights_var_empirical, value_var_empirical = AssetAllocation.optimize_MonteCarlo(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                args=(True,),  # Empirical=True 
+                **kwargs
+            )
+            optimized_weights.append(weights_var_empirical)
+            optimized_values.append(value_var_empirical) 
+        
+            # Minimize the VaR with parametric approach (assuming normality in the returns)
+            weights_var_parametric, value_var_parametric = AssetAllocation.optimize_MonteCarlo(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                args=(False,),  # Empirical=False
+                **kwargs
+            )
+            optimized_weights.append(weights_var_parametric)
+            optimized_values.append(value_var_parametric * -1) 
+        
+            # Store the results in a DataFrame 
+            results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
+            results_df['Optimized Value'] = optimized_values
+        
+            return results_df   
     
-        # Optimizar para el máximo ratio de Omega
-        weights_omega, value_omega = AssetAllocation.optimize_SLSQP(
-            asset_allocation_instance.neg_omega_ratio,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-            asset_allocation_instance.constraints
-        )
-        optimized_weights.append(weights_omega)
-        optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
-    
-        # Optimizar para minimizar el VaR con enfoque empírico
-        weights_var_empirical, value_var_empirical = AssetAllocation.optimize_SLSQP(
-            asset_allocation_instance.portfolio_var,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-            asset_allocation_instance.constraints,
-            args=(True,)  # Empirical=True para el cálculo de VaR
-        )
-        #minvar_emp_port_value, minvar_emp_port_rend = AssetAllocation.get_optport_value_n_returns(weights_var_empirical, self.asset_prices) #to get the lattest portfolio value with empirical optimized weights
-        optimized_weights.append(weights_var_empirical)
-        optimized_values.append(value_var_empirical) # * minvar_emp_port_value.iloc[-1])
-    
-        # Optimizar para minimizar el VaR con enfoque paramétrico (asumiendo normalidad)
-        weights_var_parametric, value_var_parametric = AssetAllocation.optimize_SLSQP(
-            asset_allocation_instance.portfolio_var,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-            asset_allocation_instance.constraints,
-            args=(False,)  # Empirical=False para el cálculo de VaR
-        )
-        #minvar_n_port_value, minvar_n_port_rend = AssetAllocation.get_optport_value_n_returns(optimized_weights_minvar_emp, self.asset_prices) #to get the lattest portfolio value
-        optimized_weights.append(weights_var_parametric)
-        optimized_values.append(value_var_parametric * -1) # * minvar_n_port_value.iloc[-1])
-    
-        # Crear un DataFrame para mostrar los resultados
-        results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
-        results_df['Optimized Value'] = optimized_values
-    
-        return results_df
+        elif method == "Genetic":
+        
+            # Optimize for Sharpe
+            weights_sharpe, value_sharpe = AssetAllocation.optimize_genetic(
+                asset_allocation_instance.neg_sharpe_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints,
+                **kwargs
+            )
+            optimized_weights.append(weights_sharpe)
+            optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
+        
+            # Optimize for Omega
+            weights_omega, value_omega = AssetAllocation.optimize_genetic(
+                asset_allocation_instance.neg_omega_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints,
+                **kwargs
+            )
+            optimized_weights.append(weights_omega)
+            optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
+        
+            # Minimize the VaR with empirical approach
+            weights_var_empirical, value_var_empirical = AssetAllocation.optimize_genetic(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints,
+                args=(True,),  # Empirical=True 
+                **kwargs
+            )
+            optimized_weights.append(weights_var_empirical)
+            optimized_values.append(value_var_empirical) 
+        
+            # Minimize the VaR with parametric approach (assuming normality in the returns)
+            weights_var_parametric, value_var_parametric = AssetAllocation.optimize_genetic(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints,
+                args=(False,),  # Empirical=False 
+                **kwargs
+            )
+            optimized_weights.append(weights_var_parametric)
+            optimized_values.append(value_var_parametric) 
+        
+            # Store the results in a DataFrame 
+            results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
+            results_df['Optimized Value'] = optimized_values
+        
+            return results_df
    
-
-    def run_MC_optimizations(asset_allocation_instance):
-        # Define los nombres de las optimizaciones
-        optimization_names = ["Max Sharpe", "Max Omega", "Min VaR (Empirical)", "Min VaR (Parametric)"]
-    
-        # Inicializa listas vacías para almacenar los resultados
-        optimized_weights = []
-        optimized_values = []
-    
-        # Optimizar para el máximo ratio de Sharpe
-        weights_sharpe, value_sharpe = AssetAllocation.optimize_MonteCarlo(
-            asset_allocation_instance.neg_sharpe_ratio,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-        )
-        optimized_weights.append(weights_sharpe)
-        optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
-    
-        # Optimizar para el máximo ratio de Omega
-        weights_omega, value_omega = AssetAllocation.optimize_MonteCarlo(
-            asset_allocation_instance.neg_omega_ratio,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-        )
-        optimized_weights.append(weights_omega)
-        optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
-    
-        # Optimizar para minimizar el VaR con enfoque empírico
-        weights_var_empirical, value_var_empirical = AssetAllocation.optimize_MonteCarlo(
-            asset_allocation_instance.portfolio_var,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-            args=(True,)  # Empirical=True para el cálculo de VaR
-        )
-        #minvar_emp_port_value, minvar_emp_port_rend = AssetAllocation.get_optport_value_n_returns(weights_var_empirical, self.asset_prices) #to get the lattest portfolio value with empirical optimized weights
-        optimized_weights.append(weights_var_empirical)
-        optimized_values.append(value_var_empirical) # * minvar_emp_port_value.iloc[-1])
-    
-        # Optimizar para minimizar el VaR con enfoque paramétrico (asumiendo normalidad)
-        weights_var_parametric, value_var_parametric = AssetAllocation.optimize_MonteCarlo(
-            asset_allocation_instance.portfolio_var,
-            asset_allocation_instance.start_weights,
-            asset_allocation_instance.bounds,
-            args=(False,)  # Empirical=False para el cálculo de VaR
-        )
-        #minvar_n_port_value, minvar_n_port_rend = AssetAllocation.get_optport_value_n_returns(optimized_weights_minvar_emp, self.asset_prices) #to get the lattest portfolio value
-        optimized_weights.append(weights_var_parametric)
-        optimized_values.append(value_var_parametric * -1) # * minvar_n_port_value.iloc[-1])
-    
-        # Crear un DataFrame para mostrar los resultados
-        results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
-        results_df['Optimized Value'] = optimized_values
-    
-        return results_df
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        elif method == "Gradient":
+        
+            # Optimize for Sharpe
+            weights_sharpe, value_sharpe = AssetAllocation.optimize_gradient(
+                asset_allocation_instance.neg_sharpe_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                **kwargs
+            )
+            optimized_weights.append(weights_sharpe)
+            optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
+        
+            # Optimize for Omega
+            weights_omega, value_omega = AssetAllocation.optimize_gradient(
+                asset_allocation_instance.neg_omega_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                **kwargs
+            )
+            optimized_weights.append(weights_omega)
+            optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
+        
+            # Minimize the VaR with empirical approach
+            weights_var_empirical, value_var_empirical = AssetAllocation.optimize_gradient(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                args=(True,),  # Empirical=True 
+                **kwargs
+            )
+            optimized_weights.append(weights_var_empirical)
+            optimized_values.append(value_var_empirical) 
+        
+            # Minimize the VaR with parametric approach (assuming normality in the returns)
+            weights_var_parametric, value_var_parametric = AssetAllocation.optimize_gradient(
+                asset_allocation_instance.portfolio_var,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                args=(False,),  # Empirical=False 
+                **kwargs
+            )
+            optimized_weights.append(weights_var_parametric)
+            optimized_values.append(value_var_parametric) 
+        
+            # Store the results in a DataFrame 
+            results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
+            results_df['Optimized Value'] = optimized_values
+        
+            return results_df
 
 
 
