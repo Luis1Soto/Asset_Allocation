@@ -105,22 +105,132 @@ class AssetAllocation:
         portfolio_value = asset_prices.dot(optimized_weights)
         
         return  portfolio_value, portfolio_value.pct_change().dropna()
-    
-    
-    @staticmethod
-    def optimize_portfolio(objective_function, start_weights, bounds, constraints, *args):
-        """
-        Generaliza el proceso de optimización de carteras como un método estático.
 
-        :param objective_function: La función objetivo a minimizar.
-        :param start_weights: Pesos iniciales de la cartera.
-        :param bounds: Límites para los pesos de la cartera.
-        :param constraints: Restricciones para la optimización.
-        :param args: Argumentos adicionales pasados a la función objetivo.
-        :return: Tupla con los pesos optimizados y el resultado de la optimización.
+    @staticmethod
+    def check_constraints(weights):
+        """
+        Check if the generated weights fulfill the sum-to-one constraint with a limit difference of 0.00005.
+
+        Parameters:
+        - weights: Array of portfolio weights to be checked.
+
+        Returns:
+        - True if the sum of weights is approximately equal to 1, False otherwise.
+        """
+        return np.abs(1 - np.sum(weights)) < 1e-5
+
+    @staticmethod
+    def check_bounds(weights, bounds):
+        """
+        Check if the portfolio weights are within the specified bounds.
+
+        Parameters:
+        - weights: Array of portfolio weights to be checked.
+        - bounds: A sequence of (min, max) pairs for each weight, defining the bounds.
+
+        Returns:
+        - Boolean: True if all weights are within their respective bounds, False otherwise.
+        """
+        return all(bounds[i][0] <= weights[i] <= bounds[i][1] for i in range(len(weights)))   
+            
+            
+    @staticmethod
+    def optimize_MonteCarlo(objective_function, start_weights, bounds, args=(), n_simulations=10000):
+        """
+        Optimize portfolio weights using a Monte Carlo simulation approach.
+
+        This method randomly generates portfolio weights and evaluates the objective function
+        for each set of weights, aiming to find the set that minimizes the objective function
+        while adhering to specified bounds and constraints.
+
+        Parameters:
+        - objective_function: The function to be minimized. This could represent various
+          portfolio metrics such as volatility, negative of the expected return, or Sharpe ratio.
+        - start_weights: Initial guess for the portfolio weights, used to determine the number
+          of assets in the portfolio.
+        - bounds: A sequence of (min, max) pairs for each weight, defining the bounds on
+          the variables. Use None for one of min or max when there is no bound in that direction.
+        - args: Additional arguments to pass to the objective function.
+        - n_simulations: The number of random weight combinations to simulate.
+
+        Returns:
+        - best_weights: The optimized weights for the portfolio that minimize the objective
+          function within the given bounds and constraints.
+        - best_value: The minimum value of the objective function found during the simulations.
+
+        Methodology:
+        The Monte Carlo simulation method generates a large number of random portfolios by
+        assigning random weights to each asset in the portfolio, subject to the sum of weights
+        being equal to 1. Each portfolio's weights are generated using the Dirichlet distribution,
+        which naturally ensures that the weights sum up to 1 and can stay within specified bounds.
+        The objective function is evaluated for each set of weights, and the set that results in
+        the minimum value of the objective function is retained as the best solution. This approach
+        does not guarantee finding the global minimum but can provide a good approximation, especially
+        when the number of simulations (n_simulations) is large.
+        """
+        num_assets = len(start_weights)
+        best_value = float('inf')  #to minimize
+        best_weights = np.zeros(num_assets)        
+        alpha = np.ones(num_assets)
+
+        for _ in range(n_simulations):
+            weights = np.random.dirichlet(alpha)
+
+            # Check for restriccions fullfillment
+            if not AssetAllocation.check_constraints(weights):
+                continue
+            value = objective_function(weights, *args)
+            if AssetAllocation.check_bounds(weights, bounds) and value < best_value:  # minimizing
+                best_value = value
+                best_weights = weights
+
+        return best_weights, best_value           
+                              
+            
+    @staticmethod
+    def optimize_SLSQP(objective_function, start_weights, bounds, constraints, args=()):
+        """
+        Optimize portfolio weights using Sequential Least Squares Programming (SLSQP).
+
+        This method solves an optimization problem where the goal is to find the portfolio
+        weights that minimize (or maximize) a given objective function, subject to various
+        constraints on the weights.
+
+        Parameters:
+        - objective_function: The function to be minimized. For portfolio optimization, this
+          could be the negative of the expected return, volatility, or Sharpe ratio, etc.
+        - start_weights: Initial guess for the portfolio weights. Must be a 1-D array of
+          the same length as the number of assets in the portfolio.
+        - bounds: A sequence of (min, max) pairs for each weight, defining the bounds on
+          the variables. Use None for one of min or max when there is no bound in that direction.
+        - constraints: A dictionary or a list of dictionaries specifying the constraints
+          the solution must satisfy. Each dictionary contains fields 'type' (equality or inequality)
+          and 'fun' that is a function defining the constraint.
+        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, dor example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
+
+        Returns:
+        - optimized_weights: The optimized weights for the portfolio that minimize the objective
+          function within the given bounds and constraints.
+        - optimized_value: The value of the objective function evaluated at the optimized weights.
+
+        Methodology:
+        The SLSQP (Sequential Least Squares Programming) optimization method is used, which is
+        suitable for solving nonlinear programming problems with both equality and inequality
+        constraints. This method is part of the broader category of Sequential Quadratic Programming
+        (SQP) methods. The SQP methods, including SLSQP, are designed to solve optimization problems
+        by constructing a sequence of quadratic subproblems, each of which approximates the
+        original problem but is easier to solve. SLSQP specifically is efficient for problems
+        where the objective function and the constraints are smooth functions of the optimization
+        variables, making it well-suited for portfolio optimization where such smoothness
+        is often present.
         """
         result = sco.minimize(objective_function, start_weights, args=args, method='SLSQP', bounds=bounds, constraints=constraints)
-        return result.x, result.fun
+        optimized_weights = result.x
+        optimized_value = result.fun
+       
+
+        return optimized_weights, optimized_value
+
     
     def portfolio_autocorr_penalty(self, weights):
         """
@@ -153,29 +263,6 @@ class AssetAllocation:
         """
         sharpe_ratio = (np.dot(weights, self.average_asset_returns) - self.rf_daily) / self.portfolio_volatility(weights, self.asset_cov_matrix)
         return -sharpe_ratio  
-    
-    
-    def optimize_max_sharpe(self):
-        """
-        Optimizes the portfolio to maximize the Sharpe Ratio.
-        The Sharpe Ratio is maximized by adjusting the asset weights in the portfolio,
-        subject to the constraints that all weights sum to 1 and each weight is between the specified bounds. 
-        This method utilizes the 'SLSQP' optimization algorithm
-        
-        Returns:
-            optimized_weights (np.ndarray): The asset weights that maximize the Sharpe Ratio.
-            optimized_sharpe (float): The maximum Sharpe Ratio achieved by the optimized portfolio.
-    
-        Method used:
-            'SLSQP' - Sequential Least Squares Programming, a gradient-based optimization algorithm
-            suitable for constrained optimization problems, including both equality and inequality constraints.
-        """       
-        result = sco.minimize(self.neg_sharpe_ratio, self.start_weights, method='SLSQP', bounds=self.bounds, constraints=self.constraints)
-        
-        optimized_weights = result.x
-        optimized_sharpe = -result.fun
-        
-        return optimized_weights, optimized_sharpe
 
 
     def neg_omega_ratio(self, weights):
@@ -186,29 +273,7 @@ class AssetAllocation:
         portfolio_omega = np.dot(weights, self.assets_omega)
         
         return -portfolio_omega
-    
-
-    def optimize_for_omega(self) :
-        """
-        Optimizes the portfolio to maximize the Omega Ratio.
-        The Omega Ratio is maximized by adjusting the asset weights in the portfolio,
-        subject to the constraints that all weights sum to 1 and each weight is between the specified bounds. 
-        This method utilizes the 'SLSQP' optimization algorithm
-        
-        Returns:
-            optimized_weights (np.ndarray): The asset weights that maximize the Omega Ratio.
-            optimized_omega (float): The maximum Omega Ratio achieved by the optimized portfolio.
-    
-        Method used:
-            'SLSQP' - Sequential Least Squares Programming, a gradient-based optimization algorithm
-            suitable for constrained optimization problems, including both equality and inequality constraints.
-        """  
-        result = sco.minimize(self.neg_omega_ratio, self.start_weights, method='SLSQP', bounds=self.bounds, constraints=self.constraints)
-        optimized_weights = result.x
-        optimized_omega = -result.fun
-        
-        return optimized_weights, optimized_omega
-    
+       
 
     def portfolio_var(self, weights, empirical= True):
         """
@@ -232,73 +297,120 @@ class AssetAllocation:
         
                
         return VaR 
-
-  
-    def minimize_var(self, empirical= True ):
-        """
-        Optimizes the weights of the assets in the portfolio.
-        
-        :return: Pesos optimizados del portafolio.
-        """
-        if empirical == True:
-            
-            opts = sco.minimize(self.portfolio_var, self.start_weights,args=(empirical), method='SLSQP', bounds=self.bounds, constraints=self.constraints)
-            optimized_weights = opts.x
-            optimized_VaR = opts.fun
-            
-        else:
-            opts = sco.minimize(self.portfolio_var, self.start_weights, args=(empirical),method='SLSQP', bounds=self.bounds, constraints=self.constraints)
-            optimized_weights = opts.x
-            optimized_VaR = opts.fun
-        
-        return optimized_weights, optimized_VaR 
     
 
-       
+    def run_SLSQP_optimizations(asset_allocation_instance):
+        # Define los nombres de las optimizaciones
+        optimization_names = ["Max Sharpe", "Max Omega", "Min VaR (Empirical)", "Min VaR (Parametric)"]
     
-    def run_optimizations(self):
-        """
-        Executes the class's optimizations and compiles the results into a DataFrame.
-
-        Returns:
-            df_optimizations (pd.DataFrame): A DataFrame where columns represent the types of optimization and
-            an additional column for the value of the optimization indicator, rows are the asset names, and the values are the optimized weights in percentage.
-        """
-        # Run optimizations
-        optimized_weights_sharpe, max_sharpe_value = self.optimize_max_sharpe()
-        optimized_weights_omega, max_omega_value = self.optimize_for_omega()
-        optimized_weights_minvar_emp, minvar_emp_value = self.minimize_var()
-        minvar_emp_port_value, minvar_emp_port_rend = self.get_optport_value_n_returns(optimized_weights_minvar_emp, self.asset_prices) #to get the lattest portfolio value  
-        optimized_weights_minvar_n, minvar_n_value = self.minimize_var(empirical = False)
-        minvar_n_port_value, minvar_n_port_rend = self.get_optport_value_n_returns(optimized_weights_minvar_n, self.asset_prices) #to get the lattest portfolio value
-      
-        
-
-        # Create results DataFrame
-        df_optimizations = pd.DataFrame({
-            'Max Sharpe Ratio Weights (%)': optimized_weights_sharpe * 100,
-            'Max Omega Ratio Weights (%)': optimized_weights_omega * 100 ,           
-            'Min VaR empirical Weights (%)': optimized_weights_minvar_emp * 100,
-            'Min VaR cov-var Weights (%)': optimized_weights_minvar_n * 100
-            
-        }, index=self.asset_prices.columns)  # Assuming asset names are in the columns of the asset_prices DataFrame
-
-        # Adding a row for the optimization indicator values
-        df_optimizations.loc['Optimization Value'] = [max_sharpe_value,max_omega_value, minvar_emp_value * minvar_emp_port_value.iloc[-1], minvar_n_value * minvar_n_port_value.iloc[-1] * -1]
-
-        return df_optimizations    
+        # Inicializa listas vacías para almacenar los resultados
+        optimized_weights = []
+        optimized_values = []
     
+        # Optimizar para el máximo ratio de Sharpe
+        weights_sharpe, value_sharpe = AssetAllocation.optimize_SLSQP(
+            asset_allocation_instance.neg_sharpe_ratio,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+            asset_allocation_instance.constraints
+        )
+        optimized_weights.append(weights_sharpe)
+        optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
     
+        # Optimizar para el máximo ratio de Omega
+        weights_omega, value_omega = AssetAllocation.optimize_SLSQP(
+            asset_allocation_instance.neg_omega_ratio,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+            asset_allocation_instance.constraints
+        )
+        optimized_weights.append(weights_omega)
+        optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
+    
+        # Optimizar para minimizar el VaR con enfoque empírico
+        weights_var_empirical, value_var_empirical = AssetAllocation.optimize_SLSQP(
+            asset_allocation_instance.portfolio_var,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+            asset_allocation_instance.constraints,
+            args=(True,)  # Empirical=True para el cálculo de VaR
+        )
+        #minvar_emp_port_value, minvar_emp_port_rend = AssetAllocation.get_optport_value_n_returns(weights_var_empirical, self.asset_prices) #to get the lattest portfolio value with empirical optimized weights
+        optimized_weights.append(weights_var_empirical)
+        optimized_values.append(value_var_empirical) # * minvar_emp_port_value.iloc[-1])
+    
+        # Optimizar para minimizar el VaR con enfoque paramétrico (asumiendo normalidad)
+        weights_var_parametric, value_var_parametric = AssetAllocation.optimize_SLSQP(
+            asset_allocation_instance.portfolio_var,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+            asset_allocation_instance.constraints,
+            args=(False,)  # Empirical=False para el cálculo de VaR
+        )
+        #minvar_n_port_value, minvar_n_port_rend = AssetAllocation.get_optport_value_n_returns(optimized_weights_minvar_emp, self.asset_prices) #to get the lattest portfolio value
+        optimized_weights.append(weights_var_parametric)
+        optimized_values.append(value_var_parametric * -1) # * minvar_n_port_value.iloc[-1])
+    
+        # Crear un DataFrame para mostrar los resultados
+        results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
+        results_df['Optimized Value'] = optimized_values
+    
+        return results_df
    
 
-
-
-
-
-
-
-
-
+    def run_MC_optimizations(asset_allocation_instance):
+        # Define los nombres de las optimizaciones
+        optimization_names = ["Max Sharpe", "Max Omega", "Min VaR (Empirical)", "Min VaR (Parametric)"]
+    
+        # Inicializa listas vacías para almacenar los resultados
+        optimized_weights = []
+        optimized_values = []
+    
+        # Optimizar para el máximo ratio de Sharpe
+        weights_sharpe, value_sharpe = AssetAllocation.optimize_MonteCarlo(
+            asset_allocation_instance.neg_sharpe_ratio,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+        )
+        optimized_weights.append(weights_sharpe)
+        optimized_values.append(value_sharpe*-1) #return to positive after making it negative on self.neg_sharpe_ratio
+    
+        # Optimizar para el máximo ratio de Omega
+        weights_omega, value_omega = AssetAllocation.optimize_MonteCarlo(
+            asset_allocation_instance.neg_omega_ratio,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+        )
+        optimized_weights.append(weights_omega)
+        optimized_values.append(value_omega*-1)  #return to positive after making it negative on self.neg_omega_ratio
+    
+        # Optimizar para minimizar el VaR con enfoque empírico
+        weights_var_empirical, value_var_empirical = AssetAllocation.optimize_MonteCarlo(
+            asset_allocation_instance.portfolio_var,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+            args=(True,)  # Empirical=True para el cálculo de VaR
+        )
+        #minvar_emp_port_value, minvar_emp_port_rend = AssetAllocation.get_optport_value_n_returns(weights_var_empirical, self.asset_prices) #to get the lattest portfolio value with empirical optimized weights
+        optimized_weights.append(weights_var_empirical)
+        optimized_values.append(value_var_empirical) # * minvar_emp_port_value.iloc[-1])
+    
+        # Optimizar para minimizar el VaR con enfoque paramétrico (asumiendo normalidad)
+        weights_var_parametric, value_var_parametric = AssetAllocation.optimize_MonteCarlo(
+            asset_allocation_instance.portfolio_var,
+            asset_allocation_instance.start_weights,
+            asset_allocation_instance.bounds,
+            args=(False,)  # Empirical=False para el cálculo de VaR
+        )
+        #minvar_n_port_value, minvar_n_port_rend = AssetAllocation.get_optport_value_n_returns(optimized_weights_minvar_emp, self.asset_prices) #to get the lattest portfolio value
+        optimized_weights.append(weights_var_parametric)
+        optimized_values.append(value_var_parametric * -1) # * minvar_n_port_value.iloc[-1])
+    
+        # Crear un DataFrame para mostrar los resultados
+        results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
+        results_df['Optimized Value'] = optimized_values
+    
+        return results_df
 
 
 
