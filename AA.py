@@ -202,7 +202,7 @@ class AssetAllocation:
 
         # Function to evaluate Fitness
         def calculate_fitness(individual):
-            # Asegurarse de que los pesos sumen 1
+            # ensure the weights sum 1
             individual = individual / np.sum(individual)
             return objective_function(individual, *args)
 
@@ -375,7 +375,32 @@ class AssetAllocation:
     def portfolio_autocorr_penalty(self, weights):
         """
         Calculates the autocorrelation penalty for the portfolio returns based on the given asset weights. 
-        This penalization is used to get "Smart" ratios or indicators
+        This penalization is used to get "Smart" ratios or indicators.
+        
+        Methodology:
+        
+        1. Returns of the portfolio are calculated with a dot product among the weights of the assets and their respective returns.
+        
+        2. The returns are used to calculate the correlation coefficient of the portfolio with itself (Autocorrelation)
+        
+        3. The 'corr' list contains values representing the autocorrelation of the portfolio returns adjusted by the number of observations. Each value in corr is calculated as:
+        
+        ((num - x) / num) * coef**x
+        
+        where:
+            'x' is the time lag between observations 
+            'num' is the total number of observations, and 
+            'coef' is the autocorrelation coefficient. 
+            
+        This formula adjusts the autocorrelation coefficient for the time lag, giving less weight to autocorrelations with larger lags. 
+        
+        4. Summing the adjusted autocorrelation values contained in 'corr' provides an aggregated measure of autocorrelation across the portfolio, taking into account how this autocorrelation diminishes over time.
+        
+        5. After summing the adjusted autocorrelation values, the result is multiplied by 2. This is done because in time series theory, specifically in the adjustment of variance for a sum of autocorrelated observations, the autocorrelation term is counted twice for each pair of observations. 
+        
+        6. Adding 1 at the end ensures that the minimum penalty is 1, even in the absence of autocorrelation, we wouldn't want the penalty to be 0, as that would imply no adjustment to the ratio or indicator being calculated.
+        
+        7. Finally, the square root of the total is taken. Since the variance of a sum of random variables (in this case, the portfolio returns over time) is proportional to the sum of their covariances. By taking the square root, we convert this aggregated measure of adjusted variance (which has been inflated by the autocorrelation and by the factor of 2) back to a scale comparable to that of the original returns, providing a penalty that is proportional to the level of "risk" introduced by autocorrelation.
     
         :param weights: Weights of the assets in the portfolio.
         :return: Autocorrelation penalty for the portfolio returns.
