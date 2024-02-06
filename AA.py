@@ -42,7 +42,8 @@ class AssetAllocation:
         :param asset_prices: DataFrame with rows as dates and columns as asset tickers, containing the prices of each asset.
         :param benchmark_prices: DataFrame with rows as dates and a column with the benchmark ticker, containing the Adjusted close price.
         :param rf: Risk Free Rate for the given period
-        :param bounds: Optional. A tuple of tuples specifying the minimum and maximum weights for each asset. Default is (0.01, 1) for each asset (minimun 1% and maximum 10%).
+        :param bounds: Optional. A tuple of tuples specifying the minimum and maximum weights for each asset. 
+        Default is (0.01, 1) for each asset (minimun 1% and maximum 10%).
         """
         self.asset_prices= asset_prices
         self.num_assets = len(asset_prices.columns)
@@ -153,7 +154,8 @@ class AssetAllocation:
           of assets in the portfolio.
         - bounds: A sequence of (min, max) pairs for each weight, defining the bounds on
           the variables.
-        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, for example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
+        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, 
+        for example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
         - n_simulations: The number of random weight combinations to simulate.
 
         Returns:
@@ -272,7 +274,8 @@ class AssetAllocation:
         - constraints: A dictionary or a list of dictionaries specifying the constraints
           the solution must satisfy. Each dictionary contains fields 'type' (equality or inequality)
           and 'fun' that is a function defining the constraint.
-        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, for example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
+        - args: Additional arguments to pass to the objective function, used to enable variations on the optimizations, 
+        for example: Sharpe/Smart Sharpe, Cov-Var/Empirical Min-VaR.
 
         Returns:
         - optimized_weights: The optimized weights for the portfolio that minimize the objective
@@ -394,13 +397,19 @@ class AssetAllocation:
             
         This formula adjusts the autocorrelation coefficient for the time lag, giving less weight to autocorrelations with larger lags. 
         
-        4. Summing the adjusted autocorrelation values contained in 'corr' provides an aggregated measure of autocorrelation across the portfolio, taking into account how this autocorrelation diminishes over time.
+        4. Summing the adjusted autocorrelation values contained in 'corr' provides an aggregated measure of autocorrelation across the portfolio, 
+        taking into account how this autocorrelation diminishes over time.
         
-        5. After summing the adjusted autocorrelation values, the result is multiplied by 2. This is done because in time series theory, specifically in the adjustment of variance for a sum of autocorrelated observations, the autocorrelation term is counted twice for each pair of observations. 
+        5. After summing the adjusted autocorrelation values, the result is multiplied by 2. This is done because in time series theory,
+        specifically in the adjustment of variance for a sum of autocorrelated observations, the autocorrelation term is counted twice for each pair of observations. 
         
-        6. Adding 1 at the end ensures that the minimum penalty is 1, even in the absence of autocorrelation, we wouldn't want the penalty to be 0, as that would imply no adjustment to the ratio or indicator being calculated.
+        6. Adding 1 at the end ensures that the minimum penalty is 1, even in the absence of autocorrelation, we wouldn't want the penalty to be 0, 
+        as that would imply no adjustment to the ratio or indicator being calculated.
         
-        7. Finally, the square root of the total is taken. Since the variance of a sum of random variables (in this case, the portfolio returns over time) is proportional to the sum of their covariances. By taking the square root, we convert this aggregated measure of adjusted variance (which has been inflated by the autocorrelation and by the factor of 2) back to a scale comparable to that of the original returns, providing a penalty that is proportional to the level of "risk" introduced by autocorrelation.
+        7. Finally, the square root of the total is taken. Since the variance of a sum of random variables (in this case, the portfolio returns over time)
+        is proportional to the sum of their covariances. By taking the square root, we convert this aggregated measure of adjusted variance
+        (which has been inflated by the autocorrelation and by the factor of 2) back to a scale comparable to that of the original returns,
+        providing a penalty that is proportional to the level of "risk" introduced by autocorrelation.
     
         :param weights: Weights of the assets in the portfolio.
         :return: Autocorrelation penalty for the portfolio returns.
@@ -673,49 +682,3 @@ class AssetAllocation:
             results_df['Optimized Value'] = optimized_values
         
             return results_df
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
