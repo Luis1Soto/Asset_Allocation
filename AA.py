@@ -569,7 +569,7 @@ class AssetAllocation:
                 asset_allocation_instance.constraints
             )
             optimized_weights.append(weights_safety_first)
-            optimized_values.append(value_safety_first)
+            optimized_values.append(value_safety_first * -1)
         
         
             # Store the results in a DataFrame 
@@ -635,6 +635,16 @@ class AssetAllocation:
             optimized_weights.append(weights_semivariance)
             optimized_values.append(value_semivariance) 
         
+        
+            # Optimize for Safety-First
+            weights_safety_first, value_safety_first = AssetAllocation.optimize_MonteCarlo(
+                asset_allocation_instance.neg_safety_first_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                **kwargs
+            )
+            optimized_weights.append(weights_safety_first)
+            optimized_values.append(value_safety_first * -1) 
         
             # Store the results in a DataFrame 
             results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
@@ -702,6 +712,19 @@ class AssetAllocation:
             optimized_weights.append(weights_semivariance)
             optimized_values.append(value_semivariance) 
         
+        
+            # Optimize for Safety-First
+            weights_safety_first, value_safety_first = AssetAllocation.optimize_genetic(
+                asset_allocation_instance.neg_safety_first_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints,
+                **kwargs
+            )
+            optimized_weights.append(weights_safety_first)
+            optimized_values.append(value_safety_first * -1)
+        
+        
             # Store the results in a DataFrame 
             results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=asset_allocation_instance.asset_prices.columns)
             results_df['Optimized Value'] = optimized_values
@@ -753,7 +776,7 @@ class AssetAllocation:
             optimized_weights.append(weights_var_parametric)
             optimized_values.append(value_var_parametric) 
             
-              # Optimize for Semivariance
+            # Optimize for Semivariance
             weights_semivariance, value_semivariance = AssetAllocation.optimize_gradient(
                 asset_allocation_instance.semivariance_ratio,
                 asset_allocation_instance.start_weights,
@@ -762,6 +785,16 @@ class AssetAllocation:
             )
             optimized_weights.append(weights_semivariance)
             optimized_values.append(value_semivariance) 
+        
+            # Optimize for Semivariance
+            weights_safety_first, value_safety_first = AssetAllocation.optimize_gradient(
+                asset_allocation_instance.neg_safety_first_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                **kwargs
+            )
+            optimized_weights.append(weights_safety_first)
+            optimized_values.append(value_safety_first * -1) 
         
         
             # Store the results in a DataFrame 
