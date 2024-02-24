@@ -69,7 +69,6 @@ class AssetAllocation:
         self.downside = self.portfolio_market_gap[self.portfolio_market_gap < 0].fillna(0).std()
         self.upside = self.portfolio_market_gap[self.portfolio_market_gap > 0].fillna(0).std()
         self.assets_omega = self.upside / self.downside
-        self.semivariance = self.semivariance_ratio(self.start_weights)
 
   
 
@@ -486,8 +485,26 @@ class AssetAllocation:
         return semivariance
 
     
+    def neg_safety_first_ratio(self, weights):
+        """
+        Calculates the negative Roy's Safety First Ratio (SFratio) for a given set of asset weights.
+
+        :param weights: Weights of the assets in the portfolio.
+        :return: Negative SFratio.
+        """
+        MAR = self.rf_daily  # Ejemplo de retorno mínimo aceptable
+        portfolio_return = np.dot(weights, self.average_asset_returns)
+        portfolio_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
+        
+        sf_ratio = (portfolio_return - MAR) / portfolio_volatility
+        
+        return -sf_ratio
+
+    
+    
+    
     def Optimize_Portfolio(asset_allocation_instance, method = "Montecarlo", **kwargs):
-        optimization_names = ["Max Sharpe", "Max Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance"]
+        optimization_names = ["Max Sharpe", "Max Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First"]
         optimized_weights = []
         optimized_values = []  
         
@@ -543,6 +560,16 @@ class AssetAllocation:
             )
             optimized_weights.append(weights_semivariance)
             optimized_values.append(value_semivariance) 
+        
+            # Optimize for Safety-First
+            weights_safety_first, value_safety_first = AssetAllocation.optimize_SLSQP(
+                asset_allocation_instance.neg_safety_first_ratio,
+                asset_allocation_instance.start_weights,
+                asset_allocation_instance.bounds,
+                asset_allocation_instance.constraints
+            )
+            optimized_weights.append(weights_safety_first)
+            optimized_values.append(value_safety_first)
         
         
             # Store the results in a DataFrame 
