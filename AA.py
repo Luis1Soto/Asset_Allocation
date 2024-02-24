@@ -551,14 +551,11 @@ class AssetAllocation:
         optimized_weights = []
         optimized_values = []
 
-        # Selecciona la función de optimización basada en el método
-        # Asegúrate de tener métodos definidos en tu clase con nombres como: optimize_SLSQP, optimize_MonteCarlo, optimize_genetic, optimize_gradient
         optimize_function = getattr(self, f"optimize_{method}", None)
 
         if not optimize_function:
             raise ValueError(f"Optimization method '{method}' not recognized.")
-
-        # Configuración para cada optimización
+        #function configuration
         optimizations = [
             (self.neg_sharpe_ratio, False),
             (self.neg_sharpe_ratio, True),  # 'True' = Smart Sharpe
