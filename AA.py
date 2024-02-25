@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import scipy.optimize as sco
 from scipy.stats import norm
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import pdist, squareform
 
 class DataDownloader:
     
@@ -516,6 +518,77 @@ class AssetAllocation:
         sf_ratio = (portfolio_return - MAR) / portfolio_volatility
         
         return -sf_ratio
+    
+    def neg_sortino_ratio(self, weights, *args):
+        """  
+        Calculate the negative Sortino ratio of a portfolio, focusing on downside risk relative to the risk-free rate. The Sortino ratio is 
+        a modification of the Sharpe ratio that distinguishes between harmful volatility and total volatility by using the portfolio's 
+        downside deviation instead of the total standard deviation of the portfolio returns.
+
+        Parameters:
+        - weights: array-like, the weights of the assets in the portfolio.
+
+        Returns:
+        - float, the portfolio's negative Sortino ratio for its minimization in optimization routines.
+
+        1. Calculate the portfolio return: Utilize the dot product between the weights of the portfolio's assets and the average returns of 
+        those assets to derive the portfolio return.
+        2. Filter for returns below the risk-free rate: Identify only the returns of the portfolio's assets that are below the risk-free 
+        rate. This step is crucial for calculating semivariance, which focuses on downside volatility.
+        3. Calculate weighted negative excess returns: Apply the portfolio's weights to these filtered returns to obtain a weighted 
+        representation of them. These represent the negative excess returns, which are the focus of the Sortino ratio calculation.
+        4. Calculate the semivariance: Square the weighted negative excess returns and then average these values to determine the 
+        semivariance. The semivariance measures the variability of losses relative to the risk-free rate.
+        5. Calculate the Sortino ratio: Subtract the risk-free rate from the portfolio return and divide the result by the square root of 
+        the semivariance. This yields the Sortino ratio, a measure of risk-adjusted performance that considers only the negative volatility 
+        relative to the risk-free rate.
+
+        Note:
+        The calculation is designed to focus on the downside risk by considering only the negative excess returns relative to the risk-free 
+        rate.
+    
+        """ 
+        
+        portfolio_return = np.dot(weights, self.average_asset_returns)
+        excess_returns = self.asset_returns - self.rf_daily
+        negative_excess_returns = excess_returns[excess_returns < 0]
+        weighted_negative_excess_returns = negative_excess_returns.multiply(weights, axis=1)
+        semivariance = np.mean(np.square(weighted_negative_excess_returns.sum(axis=1)))
+
+        sortino_ratio = (portfolio_return - self.rf_daily) / np.sqrt(semivariance)
+        
+        return -sortino_ratio
+    
+    
+    def neg_risk_parity_ratio(self, weights, *args):
+        """
+        Calculate the negative Risk Parity ratio for a given set of asset weights, optimizing towards an equitable risk distribution among 
+        the portfolio assets. Risk Parity is an investment strategy that aims to distribute risk equitably among the components of a 
+        portfolio.
+
+        Parameters:
+
+        - weights: array-like, the weights of the assets in the portfolio.
+        - Returns: float, the negative Risk Parity ratio of the portfolio for its minimization in optimization routines.
+    
+
+        1. Determine the total volatility of the portfolio using the current weights and the covariance matrix of the asset returns.
+        2. Evaluate how each additional weight in an asset contributes to the total risk of the portfolio, using the covariance matrix and 
+        current weights.
+        3. Multiply the marginal risk contribution of each asset by their respective weights to obtain their total contribution to the 
+        portfolio's risk.
+        4. Sum the squared differences between the risk contribution of each asset and the average of these contributions, aiming for an 
+        equitable risk distribution.
+        5. Return the negative value of this sum: By minimizing this negative value, optimization focuses on equalizing each asset's risk 
+        contribution, aligning with the principle of Risk Parity.
+        """
+        
+        portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(self.asset_cov_matrix, weights)))
+        marginal_risk_contribution = self.asset_cov_matrix.dot(weights) / portfolio_volatility
+        total_risk_contribution = weights * marginal_risk_contribution
+        risk_parity_ratio = np.sum((total_risk_contribution - total_risk_contribution.mean())**2)
+
+        return -risk_parity_ratio
 
 
     def optimize_generic(self, optimize_function, objective_function, is_smart=False, **kwargs):
@@ -547,7 +620,7 @@ class AssetAllocation:
         return weights, value
 
     def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
-        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First"]
+        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity" ]
         optimized_weights = []
         optimized_values = []
 
@@ -564,7 +637,9 @@ class AssetAllocation:
             (self.portfolio_var, True),     # Empirical VaR
             (self.portfolio_var, False),    # Parametric VaR
             (self.semivariance_ratio, False),
-            (self.neg_safety_first_ratio, False)
+            (self.neg_safety_first_ratio, False),
+            (self.neg_sortino_ratio, False),
+            (self.neg_risk_parity_ratio, False)
         ]
 
         for objective_function, is_smart in optimizations:
