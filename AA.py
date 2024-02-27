@@ -430,43 +430,53 @@ class AssetAllocation:
 
     def neg_sharpe_ratio(self, weights, Smart=False):
         """
-        Calculates the negative Sharpe Ratio for a given set of asset weights.
-
+        Calculates the negative annualized Sharpe Ratio for a given set of asset weights, optionally adjusting for portfolio autocorrelation.
+    
         :param weights: Weights of the assets in the portfolio.
-        :param average_asset_returns: Average daily returns of the assets.
-        :param cov_matrix: Covariance matrix of asset returns.
-        :param rf_daily: Daily risk-free rate.
-        :return: Negative Sharpe Ratio.
+        :param Smart: Boolean flag to apply autocorrelation penalty to the Sharpe Ratio.
+        :return: Negative annualized Sharpe Ratio.
         """
-        if Smart==True:
-            sharpe_ratio = (np.dot(weights, self.average_asset_returns) - self.rf_daily) / (self.portfolio_volatility(weights, self.asset_cov_matrix * self.portfolio_autocorr_penalty(weights) ))
-        else:
-            
-            sharpe_ratio = (np.dot(weights, self.average_asset_returns) - self.rf_daily) / self.portfolio_volatility(weights, self.asset_cov_matrix)
-         
-                                                                                        
-                                                                                        
-                                                                                            
+        trading_days = 252
+    
+        daily_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
+    
+        if Smart:
+            autocorr_penalty = self.portfolio_autocorr_penalty(weights)
+            daily_volatility *= autocorr_penalty
+    
+        annual_volatility = daily_volatility * np.sqrt(trading_days)
+    
+        # Calcula el exceso de retorno diario del portafolio y luego anualízalo
+        daily_excess_return = np.dot(weights, self.average_asset_returns) - self.rf_daily
+        annual_excess_return = daily_excess_return * trading_days
+    
+        # Calcula el ratio de Sharpe anualizado
+        annual_sharpe_ratio = annual_excess_return / annual_volatility
+    
+        return -annual_sharpe_ratio
 
-                                                                                            
-                                                                                            
-                                                                                            
-        return -sharpe_ratio  
 
-
-    def neg_omega_ratio(self, weights, Smart = False):
+    def neg_omega_ratio(self, weights, Smart=False):
         """
-        Returns the negative Omega ratio for optimization purposes.
-        :return: Negative Omega ratio of the portfolio.
+        Calculates the negative Omega Ratio for a given set of asset weights, comparing daily returns to a daily benchmark.
+    
+        :param weights: Weights of the assets in the portfolio.
+        :param Smart: Boolean flag to apply autocorrelation penalty.
+        :return: Negative Omega Ratio for optimization.
         """
-        if Smart == True:
-            portfolio_omega = np.dot(weights, self.assets_omega) /  (1+((self.portfolio_autocorr_penalty(weights)-1) *2))
-                                                                                            
-          
-        else: 
-            portfolio_omega = np.dot(weights, self.assets_omega)
-        
-        return -portfolio_omega
+        portfolio_returns = pd.DataFrame(self.asset_returns.dot(weights))
+        excess_returns = portfolio_returns[0] - self.benchmark_returns[self.benchmark_returns.columns[0]] 
+        positive_excess = excess_returns[excess_returns > 0].sum()
+        negative_excess = -excess_returns[excess_returns < 0].sum()
+        omega_ratio = positive_excess / negative_excess
+    
+       
+        if Smart:
+            autocorr_penalty = self.portfolio_autocorr_penalty(weights)
+            omega_ratio /= (1 + ((autocorr_penalty - 1) * 2))
+    
+        return -omega_ratio 
+
        
 
     def portfolio_var(self, weights, empirical= True):
