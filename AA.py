@@ -36,6 +36,135 @@ class DataDownloader:
         return pd.DataFrame(asset_data), benchmark_data
     
 
+class HierarchicalRiskParity:
+    
+    def __init__(self, returns):
+        """
+        Initialize the HierarchicalRiskParity object with returns data.
+
+        :param returns: Historical returns of assets.
+        :type returns: pd.DataFrame
+        """
+        self.names = returns.columns
+        self.returns = returns
+        self.cov = returns.cov()
+        self.corr = returns.corr()
+        
+        self.link = None
+        self.sort_ix = None
+        self.weights = None
+
+    def get_quasi_diagonalization(self, link):
+        """
+        Perform quasi-diagonalization ordering on a linkage matrix.
+
+        :param link: Linkage matrix from hierarchical clustering.
+        :type link: np.ndarray
+        :return: Ordered indices based on quasi-diagonalization.
+        :rtype: list
+        """
+        link = link.astype(int)
+        sort_ix = pd.Series([link[-1, 0], link[-1, 1]])
+        num_items = link[-1, 3]
+
+        while sort_ix.max() >= num_items:
+            sort_ix.index = range(0, sort_ix.shape[0] * 2, 2)
+            df0 = sort_ix[sort_ix >= num_items]
+            i = df0.index
+            j = df0.values - num_items
+            sort_ix[i] = link[j, 0]
+            df0 = pd.Series(link[j, 1], index=i + 1)
+            sort_ix = pd.concat([sort_ix, df0])
+            sort_ix = sort_ix.sort_index()
+            sort_ix.index = range(sort_ix.shape[0])
+
+        return sort_ix.tolist()
+   
+    def cluster_variation(self, cov, c_items):
+        """
+        Calculate the variance of a cluster.
+
+        :param cov: Covariance matrix of returns.
+        :type cov: pd.DataFrame
+        :param c_items: Indices of items in the cluster.
+        :type c_items: list
+        :return: Variance of the cluster.
+        :rtype: float
+        """
+        c_cov = cov.iloc[c_items, c_items]
+        
+        ivp_weights = 1. / np.diag(c_cov)
+        ivp_weights /= ivp_weights.sum()
+        ivp_weights = ivp_weights.reshape(-1, 1)
+        
+        cluster_variance = np.dot(np.dot(ivp_weights.T, c_cov), ivp_weights)[0, 0]
+        return cluster_variance
+
+    @staticmethod
+    def bisection(items):
+        """
+        Recursively split clusters into subclusters.
+
+        :param items: List of cluster indices.
+        :type items: list
+        :return: List of subcluster indices after bisection.
+        :rtype: list
+        """
+        new_items = [i[int(j):int(k)] for i in items for j, k in ((0, len(i) / 2), (len(i) / 2, len(i))) if len(i) > 1]
+        return new_items
+
+    def hrp_allocation(self, cov, sort_ix):
+        """
+        Calculate asset weights using hierarchical risk parity.
+
+        :param cov: Covariance matrix of returns.
+        :type cov: pd.DataFrame
+        :param sort_ix: Ordered indices from quasi-diagonalization.
+        :type sort_ix: list
+        :return: Asset weights based on HRP.
+        :rtype: pd.Series
+        """
+        w = pd.Series(1, index=sort_ix)
+        clusters = [sort_ix]
+
+        while len(clusters) > 0:
+            clusters = self.bisection(clusters)
+
+            for i in range(0, len(clusters), 2):
+                cluster_0 = clusters[i]
+                cluster_1 = clusters[i + 1]
+
+                c_var0 = self.cluster_variation(cov, cluster_0)
+                c_var1 = self.cluster_variation(cov, cluster_1)
+
+                alpha = 1 - c_var0 / (c_var0 + c_var1)
+
+                w[cluster_0] *= alpha
+                w[cluster_1] *= 1 - alpha
+
+        return w
+
+    def optimize_hrp(self, linkage_method='single'):
+        """
+        Optimize asset weights using the specified linkage method.
+
+        :param linkage_method: Method used for hierarchical clustering.
+        :type linkage_method: str
+        :return: Optimized asset weights based on HRP.
+        :rtype: pd.Series
+        """
+        self.link = linkage(squareform(1 - self.corr), method=linkage_method)
+        self.sort_ix = self.get_quasi_diagonalization(self.link)
+        sorted_weights = self.hrp_allocation(self.cov, self.sort_ix)
+        self.weights = pd.Series(index=self.names, dtype=float)
+
+        for i, ix in enumerate(self.sort_ix):
+            self.weights.iloc[ix] = sorted_weights.iloc[i]
+        self.weights.name = "HRP"
+        
+        return self.weights
+
+    
 class AssetAllocation:
     
     def __init__(self, asset_prices, benchmark_prices, rf, bounds = None):
@@ -599,6 +728,12 @@ class AssetAllocation:
         risk_parity_ratio = np.sum((total_risk_contribution - total_risk_contribution.mean())**2)
 
         return -risk_parity_ratio
+    
+    
+    def calculate_hrp_weights(self):
+        hrp = HierarchicalRiskParity(self.asset_returns)
+        hrp_weights = hrp.optimize_hrp()
+        return hrp_weights
 
 
     def optimize_generic(self, optimize_function, objective_function, is_smart=False, **kwargs):
@@ -664,6 +799,8 @@ class AssetAllocation:
 
         results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=self.asset_prices.columns)
         results_df['Optimized Value'] = optimized_values
+        # HRP
+        hrp_weights = self.calculate_hrp_weights()
+        results_df.loc['HRP'] = hrp_weights.append(pd.Series({"Optimized Value": np.nan}))
 
         return results_df
-
