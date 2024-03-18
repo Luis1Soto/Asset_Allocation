@@ -2,6 +2,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import scipy.optimize as sco
+import pandas_datareader.data as web
+import datetime as dt
+import statsmodels.api as sm
 from scipy.stats import norm
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist, squareform
@@ -32,13 +35,149 @@ class DataDownloader:
         asset_data = yf.download(assets, start=start_date, end=end_date)['Adj Close']
         benchmark_data = pd.DataFrame(yf.download(benchmark, start=start_date, end=end_date)['Adj Close'])
         benchmark_data = benchmark_data.rename(columns={'Adj Close': benchmark})
+        
+        # Download Fama-French three factors
+        try:
+            factors = web.DataReader('F-F_Research_Data_Factors_daily', 'famafrench', start=start_date, end=end_date)[0]
+            factors = factors # / 100  # Convert to decimal form
+        except Exception as e:
+            print("Error downloading Fama-French factors:", e)
+            factors = pd.DataFrame()  # Return an empty DataFrame in case of error
 
-        return pd.DataFrame(asset_data), benchmark_data
+        return pd.DataFrame(asset_data), benchmark_data, factors
+
+class HierarchicalRiskParity:
     
+    def __init__(self, returns):
+        """
+        Initialize the HierarchicalRiskParity object with returns data.
 
+        :param returns: Historical returns of assets.
+        :type returns: pd.DataFrame
+        """
+        self.names = returns.columns
+        self.returns = returns
+        self.cov = returns.cov()
+        self.corr = returns.corr()
+        
+        self.link = None
+        self.sort_ix = None
+        self.weights = None
+
+    def get_quasi_diagonalization(self, link):
+        """
+        Perform quasi-diagonalization ordering on a linkage matrix.
+
+        :param link: Linkage matrix from hierarchical clustering.
+        :type link: np.ndarray
+        :return: Ordered indices based on quasi-diagonalization.
+        :rtype: list
+        """
+        link = link.astype(int)
+        sort_ix = pd.Series([link[-1, 0], link[-1, 1]])
+        num_items = link[-1, 3]
+
+        while sort_ix.max() >= num_items:
+            sort_ix.index = range(0, sort_ix.shape[0] * 2, 2)
+            df0 = sort_ix[sort_ix >= num_items]
+            i = df0.index
+            j = df0.values - num_items
+            sort_ix[i] = link[j, 0]
+            df0 = pd.Series(link[j, 1], index=i + 1)
+            sort_ix = pd.concat([sort_ix, df0])
+            sort_ix = sort_ix.sort_index()
+            sort_ix.index = range(sort_ix.shape[0])
+
+        return sort_ix.tolist()
+   
+    def cluster_variation(self, cov, c_items):
+        """
+        Calculate the variance of a cluster.
+
+        :param cov: Covariance matrix of returns.
+        :type cov: pd.DataFrame
+        :param c_items: Indices of items in the cluster.
+        :type c_items: list
+        :return: Variance of the cluster.
+        :rtype: float
+        """
+        c_cov = cov.iloc[c_items, c_items]
+        
+        ivp_weights = 1. / np.diag(c_cov)
+        ivp_weights /= ivp_weights.sum()
+        ivp_weights = ivp_weights.reshape(-1, 1)
+        
+        cluster_variance = np.dot(np.dot(ivp_weights.T, c_cov), ivp_weights)[0, 0]
+        return cluster_variance
+
+    @staticmethod
+    def bisection(items):
+        """
+        Recursively split clusters into subclusters.
+
+        :param items: List of cluster indices.
+        :type items: list
+        :return: List of subcluster indices after bisection.
+        :rtype: list
+        """
+        new_items = [i[int(j):int(k)] for i in items for j, k in ((0, len(i) / 2), (len(i) / 2, len(i))) if len(i) > 1]
+        return new_items
+
+    def hrp_allocation(self, cov, sort_ix):
+        """
+        Calculate asset weights using hierarchical risk parity.
+
+        :param cov: Covariance matrix of returns.
+        :type cov: pd.DataFrame
+        :param sort_ix: Ordered indices from quasi-diagonalization.
+        :type sort_ix: list
+        :return: Asset weights based on HRP.
+        :rtype: pd.Series
+        """
+        w = pd.Series(1, index=sort_ix)
+        clusters = [sort_ix]
+
+        while len(clusters) > 0:
+            clusters = self.bisection(clusters)
+
+            for i in range(0, len(clusters), 2):
+                cluster_0 = clusters[i]
+                cluster_1 = clusters[i + 1]
+
+                c_var0 = self.cluster_variation(cov, cluster_0)
+                c_var1 = self.cluster_variation(cov, cluster_1)
+
+                alpha = 1 - c_var0 / (c_var0 + c_var1)
+
+                w[cluster_0] *= alpha
+                w[cluster_1] *= 1 - alpha
+
+        return w
+
+    def optimize_hrp(self, linkage_method='single'):
+        """
+        Optimize asset weights using the specified linkage method.
+
+        :param linkage_method: Method used for hierarchical clustering.
+        :type linkage_method: str
+        :return: Optimized asset weights based on HRP.
+        :rtype: pd.Series
+        """
+        self.link = linkage(squareform(1 - self.corr), method=linkage_method)
+        self.sort_ix = self.get_quasi_diagonalization(self.link)
+        sorted_weights = self.hrp_allocation(self.cov, self.sort_ix)
+        self.weights = pd.Series(index=self.names, dtype=float)
+
+        for i, ix in enumerate(self.sort_ix):
+            self.weights.iloc[ix] = sorted_weights.iloc[i]
+        self.weights.name = "HRP"
+        
+        return self.weights
+
+    
 class AssetAllocation:
     
-    def __init__(self, asset_prices, benchmark_prices, rf, bounds = None):
+    def __init__(self, asset_prices, benchmark_prices, rf,ff_factors=None, bounds = None, RMT_filtering = False):
         """
         Initializes the AssetAllocation object with asset and benchmark prices.
         :param asset_prices: DataFrame with rows as dates and columns as asset tickers, containing the prices of each asset.
@@ -47,11 +186,14 @@ class AssetAllocation:
         :param bounds: Optional. A tuple of tuples specifying the minimum and maximum weights for each asset. 
         Default is (0.01, 1) for each asset (minimun 1% and maximum 10%).
         """
+        self.ff_expected_returns = None
         self.asset_prices= asset_prices
         self.num_assets = len(asset_prices.columns)
         self.asset_returns= asset_prices.pct_change().dropna()
         self.average_asset_returns= self.asset_returns.mean().values
         self.asset_cov_matrix = self.asset_returns.cov()
+        if RMT_filtering == True:
+            self.RMT_filtering()
         self.corr_matrix = self.asset_returns.corr()
         
         self.benchmark_prices= benchmark_prices
@@ -66,14 +208,56 @@ class AssetAllocation:
             self.bounds = tuple((0.01, 1) for _ in range(self.num_assets)) # Default limits for every asset (min 1% - max 100%)
         self.rf = rf
         self.rf_daily = rf / 252
+        self.ff_factors = ff_factors
         
         self.portfolio_market_gap = self.asset_returns - self.benchmark_returns.values
         self.downside = self.portfolio_market_gap[self.portfolio_market_gap < 0].fillna(0).std()
         self.upside = self.portfolio_market_gap[self.portfolio_market_gap > 0].fillna(0).std()
         self.assets_omega = self.upside / self.downside
+        
+        self.P = None
+        self.Q = None
+        self.tau = None
+        self.Omega =   None 
+        self.bl_expectations_set = False
+    
+    def calculate_ff_expected_returns(self, ff_factors_expectations):
+        expected_returns = {}
+        for asset in self.asset_prices.columns:
+            # index line up
+            aligned_returns = self.asset_returns[asset].dropna()
+            aligned_factors = self.ff_factors.loc[aligned_returns.index]  
+            X = sm.add_constant(aligned_factors)  
+            y = aligned_returns
 
+            model = sm.OLS(y, X).fit()
+            betas = model.params
+
+            # Calculate the expected return using the model coefficients and factor expectations
+            expected_return = betas['const'] + sum(betas[factor] * ff_factors_expectations[factor] for factor in ['Mkt-RF', 'SMB', 'HML'])
+            expected_returns[asset] = expected_return
+
+        self.ff_expected_returns = pd.Series(expected_returns)
   
-
+    def RMT_filtering(self):
+        """
+        Filters the covariance matrix of asset returns using Random Matrix Theory (RMT)
+        to reduce noise.
+    
+        This method reconstructs the covariance matrix using only the eigenvalues that are considered to be signal,
+        based on the upper bound of the Marchenko-Pastur distribution.
+        """
+        
+        eigenvalues, eigenvectors = np.linalg.eigh(self.asset_cov_matrix)
+        
+        T, N = self.asset_returns.shape
+        lambda_plus = (1 + np.sqrt(N/T))**2
+        filtered_eigenvalues = np.clip(eigenvalues, 0, lambda_plus)
+        filtered_cov_matrix = eigenvectors @ np.diag(filtered_eigenvalues) @ eigenvectors.T
+        
+        self.asset_cov_matrix = filtered_cov_matrix
+    
+    
     @staticmethod
     def portfolio_volatility(weights, asset_cov_matrix):
         """
@@ -194,8 +378,6 @@ class AssetAllocation:
                 best_weights = weights
 
         return best_weights, best_value           
-
-    
 
     @staticmethod
     def optimize_Genetic(objective_function, start_weights, bounds, constraints, population_size=100, generations=200, crossover_rate=0.7, mutation_rate=0.1, args=()):
@@ -454,6 +636,39 @@ class AssetAllocation:
         annual_sharpe_ratio = annual_excess_return / annual_volatility
     
         return -annual_sharpe_ratio
+    
+    def neg_sharpe_ratio_ff(self, weights, *args):
+        
+        """
+        Calculate the negative Sharpe Ratio of an investment portfolio using the Fama-French expected returns model.
+
+        The Sharpe Ratio is a measure of risk-adjusted return of an investment. It is the ratio of the excess return of the investment over the risk-free rate to the standard deviation of the investment returns (volatility). This function returns the negative Sharpe Ratio to facilitate minimization in optimization problems. The Fama-French model is used to estimate the expected returns of the portfolio.
+
+        Parameters:
+        - weights (numpy.ndarray): A 1D array of portfolio weights for each asset.
+        - *args: Additional arguments, not used in this function but included for compatibility with optimization routines.
+
+        Returns:
+        - float: The negative annualized Sharpe Ratio of the portfolio.
+
+        The function calculates the daily excess return by dotting the portfolio weights with the Fama-French expected returns, subtracting the daily risk-free rate, then annualizes this return. It also calculates the portfolio's annual volatility as the standard deviation of portfolio returns, scaled up to an annual measure. The annual Sharpe Ratio is the annual excess return divided by the annual volatility, and its negative value is returned.
+        """
+        
+        ff_expected_returns = self.ff_expected_returns
+        trading_days = 252
+
+        # Use expected returns based on Fama-French
+        daily_excess_return = np.dot(weights, ff_expected_returns) - self.rf_daily
+        annual_excess_return = daily_excess_return * trading_days
+
+        # Calculate portfolio volatility
+        daily_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
+        annual_volatility = daily_volatility * np.sqrt(trading_days)
+
+        # Calculate the annualized Sharpe ratio
+        annual_sharpe_ratio_ff = annual_excess_return / annual_volatility
+
+        return -annual_sharpe_ratio_ff
 
 
     def neg_omega_ratio(self, weights, Smart=False):
@@ -599,7 +814,49 @@ class AssetAllocation:
         risk_parity_ratio = np.sum((total_risk_contribution - total_risk_contribution.mean())**2)
 
         return -risk_parity_ratio
+    
+    
+    def calculate_hrp_weights(self):
+        hrp = HierarchicalRiskParity(self.asset_returns)
+        hrp_weights = hrp.optimize_hrp()
+        return hrp_weights
 
+    def set_blacklitterman_expectations(self, P, Q, tau, Omega):
+        """
+        Sets the Black-Litterman expectations to be used in optimization.
+    
+        :param P: Selection matrix indicating the assets involved in the views.
+        :param Q: Views vector containing the expected returns.
+        :param tau: Scalar indicating the uncertainty in the market equilibrium returns.
+        :param Omega: Diagonal matrix representing the uncertainty in the investor's views.
+        """
+        self.P = P
+        self.Q = Q
+        self.tau = tau
+        self.Omega = Omega    
+        self.bl_expectations_set = True
+        
+    
+    def neg_BL_returns(self, weights, *args):
+        """
+        Black-Litterman objective function for asset allocation optimization.
+        
+        :param weights: Weights of the assets in the portfolio.
+        :param P: Matrix that identifies the assets involved in the views.
+        :param Q: Vector of the investor's views on the assets' excess returns.
+        :param tau: Scalar indicating the uncertainty in the equilibrium excess returns.
+        :param omega: Diagonal matrix of the uncertainty in the investor's views.
+        
+        :return: Negative of the adjusted portfolio returns based on the Black-Litterman model.
+        """
+        
+        pi = self.tau * np.dot(self.asset_cov_matrix, weights)
+        M = np.linalg.inv(np.linalg.inv(self.tau * self.asset_cov_matrix) + np.dot(np.dot(self.P.T, np.linalg.inv(self.Omega)), self.P))
+        adjusted_returns = np.dot(M, np.dot(np.linalg.inv(self.tau * self.asset_cov_matrix), pi) + np.dot(np.dot(self.P.T, np.linalg.inv(self.Omega)), self.Q))
+        portfolio_return = np.dot(weights, adjusted_returns)
+        
+        return -portfolio_return    
+     
 
     def optimize_generic(self, optimize_function, objective_function, is_smart=False, **kwargs):
         args = (is_smart,)
@@ -628,9 +885,14 @@ class AssetAllocation:
         value = abs(value)
 
         return weights, value
-
+    
+    
     def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
-        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity" ]
+        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Sharpe Famma French", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity" ]
+        
+        if self.bl_expectations_set:
+            optimization_names.append("Black-Litterman")
+        
         optimized_weights = []
         optimized_values = []
 
@@ -642,6 +904,7 @@ class AssetAllocation:
         optimizations = [
             (self.neg_sharpe_ratio, False),
             (self.neg_sharpe_ratio, True),  # 'True' = Smart Sharpe
+            (self.neg_sharpe_ratio_ff, False),
             (self.neg_omega_ratio, False),
             (self.neg_omega_ratio, True),   # 'True' = Smart Omega
             (self.portfolio_var, True),     # Empirical VaR
@@ -651,19 +914,25 @@ class AssetAllocation:
             (self.neg_sortino_ratio, False),
             (self.neg_risk_parity_ratio, False)
         ]
+        if self.bl_expectations_set:
+            optimizations.append((self.neg_BL_returns, False))
 
-        for objective_function, is_smart in optimizations:
+        for i, (objective_function, is_smart) in enumerate(optimizations):
             weights, value = self.optimize_generic(
                 optimize_function,
                 objective_function,
                 is_smart=is_smart,
                 **kwargs
             )
+            if optimization_names[i] in ["Min VaR (Empirical)", "Min VaR (Parametric)"]:
+                value *= -1
             optimized_weights.append(weights)
             optimized_values.append(value)
 
         results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=self.asset_prices.columns)
         results_df['Optimized Value'] = optimized_values
+        # HRP
+        hrp_weights = self.calculate_hrp_weights()
+        results_df.loc['HRP'] = hrp_weights.append(pd.Series({"Optimized Value": np.nan}))
 
         return results_df
-
