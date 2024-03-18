@@ -52,6 +52,15 @@ class HierarchicalRiskParity:
         """
         Initialize the HierarchicalRiskParity object with returns data.
 
+<<<<<<< HEAD
+=======
+class HierarchicalRiskParity:
+    
+    def __init__(self, returns):
+        """
+        Initialize the HierarchicalRiskParity object with returns data.
+
+>>>>>>> 9b6ad156d5a885a1b7e5673091257d547681a7cb
         :param returns: Historical returns of assets.
         :type returns: pd.DataFrame
         """
@@ -177,7 +186,11 @@ class HierarchicalRiskParity:
     
 class AssetAllocation:
     
+<<<<<<< HEAD
     def __init__(self, asset_prices, benchmark_prices, rf,ff_factors=None, bounds = None, RMT_filtering = False):
+=======
+    def __init__(self, asset_prices, benchmark_prices, rf, bounds = None, RMT_filtering = False):
+>>>>>>> 9b6ad156d5a885a1b7e5673091257d547681a7cb
         """
         Initializes the AssetAllocation object with asset and benchmark prices.
         :param asset_prices: DataFrame with rows as dates and columns as asset tickers, containing the prices of each asset.
@@ -221,6 +234,7 @@ class AssetAllocation:
         self.Omega =   None 
         self.bl_expectations_set = False
     
+<<<<<<< HEAD
     def calculate_ff_expected_returns(self, ff_factors_expectations):
         expected_returns = {}
         for asset in self.asset_prices.columns:
@@ -238,6 +252,8 @@ class AssetAllocation:
             expected_returns[asset] = expected_return
 
         self.ff_expected_returns = pd.Series(expected_returns)
+=======
+>>>>>>> 9b6ad156d5a885a1b7e5673091257d547681a7cb
   
     def RMT_filtering(self):
         """
@@ -888,7 +904,11 @@ class AssetAllocation:
     
     
     def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
+<<<<<<< HEAD
         optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Sharpe Famma French", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity" ]
+=======
+        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity" ]
+>>>>>>> 9b6ad156d5a885a1b7e5673091257d547681a7cb
         
         if self.bl_expectations_set:
             optimization_names.append("Black-Litterman")
