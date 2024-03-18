@@ -167,7 +167,7 @@ class HierarchicalRiskParity:
     
 class AssetAllocation:
     
-    def __init__(self, asset_prices, benchmark_prices, rf, bounds = None):
+    def __init__(self, asset_prices, benchmark_prices, rf, bounds = None, RMT_filtering = False):
         """
         Initializes the AssetAllocation object with asset and benchmark prices.
         :param asset_prices: DataFrame with rows as dates and columns as asset tickers, containing the prices of each asset.
@@ -181,6 +181,8 @@ class AssetAllocation:
         self.asset_returns= asset_prices.pct_change().dropna()
         self.average_asset_returns= self.asset_returns.mean().values
         self.asset_cov_matrix = self.asset_returns.cov()
+        if RMT_filtering == True:
+            self.RMT_filtering()
         self.corr_matrix = self.asset_returns.corr()
         
         self.benchmark_prices= benchmark_prices
@@ -200,9 +202,33 @@ class AssetAllocation:
         self.downside = self.portfolio_market_gap[self.portfolio_market_gap < 0].fillna(0).std()
         self.upside = self.portfolio_market_gap[self.portfolio_market_gap > 0].fillna(0).std()
         self.assets_omega = self.upside / self.downside
-
+        
+        self.P = None
+        self.Q = None
+        self.tau = None
+        self.Omega =   None 
+        self.bl_expectations_set = False
+    
   
-
+    def RMT_filtering(self):
+        """
+        Filters the covariance matrix of asset returns using Random Matrix Theory (RMT)
+        to reduce noise.
+    
+        This method reconstructs the covariance matrix using only the eigenvalues that are considered to be signal,
+        based on the upper bound of the Marchenko-Pastur distribution.
+        """
+        
+        eigenvalues, eigenvectors = np.linalg.eigh(self.asset_cov_matrix)
+        
+        T, N = self.asset_returns.shape
+        lambda_plus = (1 + np.sqrt(N/T))**2
+        filtered_eigenvalues = np.clip(eigenvalues, 0, lambda_plus)
+        filtered_cov_matrix = eigenvectors @ np.diag(filtered_eigenvalues) @ eigenvectors.T
+        
+        self.asset_cov_matrix = filtered_cov_matrix
+    
+    
     @staticmethod
     def portfolio_volatility(weights, asset_cov_matrix):
         """
@@ -323,8 +349,6 @@ class AssetAllocation:
                 best_weights = weights
 
         return best_weights, best_value           
-
-    
 
     @staticmethod
     def optimize_Genetic(objective_function, start_weights, bounds, constraints, population_size=100, generations=200, crossover_rate=0.7, mutation_rate=0.1, args=()):
@@ -735,6 +759,42 @@ class AssetAllocation:
         hrp_weights = hrp.optimize_hrp()
         return hrp_weights
 
+    def set_blacklitterman_expectations(self, P, Q, tau, Omega):
+        """
+        Sets the Black-Litterman expectations to be used in optimization.
+    
+        :param P: Selection matrix indicating the assets involved in the views.
+        :param Q: Views vector containing the expected returns.
+        :param tau: Scalar indicating the uncertainty in the market equilibrium returns.
+        :param Omega: Diagonal matrix representing the uncertainty in the investor's views.
+        """
+        self.P = P
+        self.Q = Q
+        self.tau = tau
+        self.Omega = Omega    
+        self.bl_expectations_set = True
+        
+    
+    def neg_BL_returns(self, weights, *args):
+        """
+        Black-Litterman objective function for asset allocation optimization.
+        
+        :param weights: Weights of the assets in the portfolio.
+        :param P: Matrix that identifies the assets involved in the views.
+        :param Q: Vector of the investor's views on the assets' excess returns.
+        :param tau: Scalar indicating the uncertainty in the equilibrium excess returns.
+        :param omega: Diagonal matrix of the uncertainty in the investor's views.
+        
+        :return: Negative of the adjusted portfolio returns based on the Black-Litterman model.
+        """
+        
+        pi = self.tau * np.dot(self.asset_cov_matrix, weights)
+        M = np.linalg.inv(np.linalg.inv(self.tau * self.asset_cov_matrix) + np.dot(np.dot(self.P.T, np.linalg.inv(self.Omega)), self.P))
+        adjusted_returns = np.dot(M, np.dot(np.linalg.inv(self.tau * self.asset_cov_matrix), pi) + np.dot(np.dot(self.P.T, np.linalg.inv(self.Omega)), self.Q))
+        portfolio_return = np.dot(weights, adjusted_returns)
+        
+        return -portfolio_return    
+     
 
     def optimize_generic(self, optimize_function, objective_function, is_smart=False, **kwargs):
         args = (is_smart,)
@@ -763,9 +823,14 @@ class AssetAllocation:
         value = abs(value)
 
         return weights, value
-
+    
+    
     def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
         optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity" ]
+        
+        if self.bl_expectations_set:
+            optimization_names.append("Black-Litterman")
+        
         optimized_weights = []
         optimized_values = []
 
@@ -786,14 +851,18 @@ class AssetAllocation:
             (self.neg_sortino_ratio, False),
             (self.neg_risk_parity_ratio, False)
         ]
+        if self.bl_expectations_set:
+            optimizations.append((self.neg_BL_returns, False))
 
-        for objective_function, is_smart in optimizations:
+        for i, (objective_function, is_smart) in enumerate(optimizations):
             weights, value = self.optimize_generic(
                 optimize_function,
                 objective_function,
                 is_smart=is_smart,
                 **kwargs
             )
+            if optimization_names[i] in ["Min VaR (Empirical)", "Min VaR (Parametric)"]:
+                value *= -1
             optimized_weights.append(weights)
             optimized_values.append(value)
 
