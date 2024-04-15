@@ -946,8 +946,10 @@ class AssetAllocation:
         results_df['Optimized Value'] = optimized_values
         # HRP
         hrp_weights = self.calculate_hrp_weights()
-        results_df.loc['HRP'] = hrp_weights.append(pd.Series({"Optimized Value": np.nan}))
-
+        #results_df.loc['HRP'] = hrp_weights.append(pd.Series({"Optimized Value": np.nan}))
+        # Asumiendo que hrp_weights es una pd.Series y deseas agregar un solo ítem:
+        hrp_weights['Optimized Value'] = np.nan
+        results_df.loc['HRP'] = hrp_weights
         return results_df
 
 
