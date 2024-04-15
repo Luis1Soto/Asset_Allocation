@@ -8,7 +8,8 @@ import statsmodels.api as sm
 from scipy.stats import norm
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist, squareform
-
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
 class DataDownloader:
     
     def __init__(self):
@@ -177,7 +178,7 @@ class HierarchicalRiskParity:
     
 class AssetAllocation:
     
-    def __init__(self, asset_prices, benchmark_prices, rf,ff_factors=None, bounds = None, RMT_filtering = False):
+    def __init__(self, asset_prices, benchmark_prices, rf, ff_factors_expectations=None, ff_factors=None, bounds=None, RMT_filtering=False):
         """
         Initializes the AssetAllocation object with asset and benchmark prices.
         :param asset_prices: DataFrame with rows as dates and columns as asset tickers, containing the prices of each asset.
@@ -220,6 +221,9 @@ class AssetAllocation:
         self.tau = None
         self.Omega =   None 
         self.bl_expectations_set = False
+        
+        self.calculate_ff_expected_returns(ff_factors_expectations)
+        
     
     def calculate_ff_expected_returns(self, ff_factors_expectations):
         expected_returns = {}
@@ -232,13 +236,19 @@ class AssetAllocation:
 
             model = sm.OLS(y, X).fit()
             betas = model.params
-
+            
+            try:
+                
             # Calculate the expected return using the model coefficients and factor expectations
-            expected_return = betas['const'] + sum(betas[factor] * ff_factors_expectations[factor] for factor in ['Mkt-RF', 'SMB', 'HML'])
-            expected_returns[asset] = expected_return
-
-        self.ff_expected_returns = pd.Series(expected_returns)
-  
+                expected_return = betas['const'] + sum(betas[factor] * ff_factors_expectations[factor] for factor in ['Mkt-RF', 'SMB', 'HML'])
+                expected_returns[asset] = expected_return
+            except:
+                pass
+        try:
+            self.ff_expected_returns = pd.Series(expected_returns)
+        except:
+                pass
+            
     def RMT_filtering(self):
         """
         Filters the covariance matrix of asset returns using Random Matrix Theory (RMT)
@@ -888,7 +898,7 @@ class AssetAllocation:
     
     
     def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
-        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Sharpe Famma French", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity" ]
+        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity"]
         
         if self.bl_expectations_set:
             optimization_names.append("Black-Litterman")
@@ -900,11 +910,9 @@ class AssetAllocation:
 
         if not optimize_function:
             raise ValueError(f"Optimization method '{method}' not recognized.")
-        #function configuration
         optimizations = [
             (self.neg_sharpe_ratio, False),
             (self.neg_sharpe_ratio, True),  # 'True' = Smart Sharpe
-            (self.neg_sharpe_ratio_ff, False),
             (self.neg_omega_ratio, False),
             (self.neg_omega_ratio, True),   # 'True' = Smart Omega
             (self.portfolio_var, True),     # Empirical VaR
@@ -914,9 +922,14 @@ class AssetAllocation:
             (self.neg_sortino_ratio, False),
             (self.neg_risk_parity_ratio, False)
         ]
+        
+        
         if self.bl_expectations_set:
             optimizations.append((self.neg_BL_returns, False))
+        
 
+        
+        
         for i, (objective_function, is_smart) in enumerate(optimizations):
             weights, value = self.optimize_generic(
                 optimize_function,
@@ -933,8 +946,91 @@ class AssetAllocation:
         results_df['Optimized Value'] = optimized_values
         # HRP
         hrp_weights = self.calculate_hrp_weights()
-        #results_df.loc['HRP'] = hrp_weights.append(pd.Series({"Optimized Value": np.nan}))
-        # Asumiendo que hrp_weights es una pd.Series y deseas agregar un solo ítem:
-        hrp_weights['Optimized Value'] = np.nan
-        results_df.loc['HRP'] = hrp_weights
+        results_df.loc['HRP'] = hrp_weights.append(pd.Series({"Optimized Value": np.nan}))
+
         return results_df
+
+
+    
+    
+class DynamicBacktester:
+    def __init__(self, start_date, end_date, assets, benchmark, rf, initial_capital=1_000_000, strategies=None, ff_factors_expectations=None, method=None):
+        self.start_date = datetime.strptime(start_date, "%Y-%m-%d")
+        self.end_date = datetime.strptime(end_date, "%Y-%m-%d")
+        self.assets = assets
+        self.benchmark = benchmark
+        self.initial_capital = initial_capital
+        self.strategies = strategies if strategies is not None else ['Max Sharpe']
+        self.portfolio_values = {strategy: [] for strategy in self.strategies}
+        self.daily_values = {strategy: [] for strategy in self.strategies}
+        self.data_downloader = DataDownloader()  # Creando una instancia de DataDownloader aquí
+        self.ff_factors_expectations = ff_factors_expectations
+        self.rf = rf
+        self.rf_daily = self.rf / 252
+        self.method = method
+
+    def run_backtest(self):
+        current_date = self.start_date
+
+        while current_date <= self.end_date:
+            next_rebalance_date = min(current_date + timedelta(days=6*30), self.end_date)
+
+            # Utilizando la instancia creada para descargar datos
+            asset_prices, benchmark_prices, ff_factors = self.data_downloader.download_data(
+                start_date=current_date.strftime("%Y-%m-%d"),
+                end_date=next_rebalance_date.strftime("%Y-%m-%d"),
+                assets=self.assets, benchmark=self.benchmark
+            )
+
+            # Preparar la simulación diaria
+            daily_returns = asset_prices.pct_change().dropna()
+
+            # Optimizar solo una vez por período de rebalanceo
+            asset_allocation = AssetAllocation(
+                asset_prices=asset_prices,
+                benchmark_prices=benchmark_prices,
+                rf=self.rf,
+                ff_factors=ff_factors,
+                ff_factors_expectations = self.ff_factors_expectations
+            )
+            optimized_portfolios = asset_allocation.Optimize_Portfolio(method=self.method)
+           
+
+            capital_per_strategy = {strategy: self.initial_capital for strategy in self.strategies}
+
+            for strategy in self.strategies:
+                weights = optimized_portfolios.loc[strategy, self.assets]
+
+                # Calcular rendimiento del portafolio diariamente hasta el próximo rebalanceo
+                daily_capital = capital_per_strategy[strategy]
+                for date in daily_returns.index:
+                    daily_return = (daily_returns.loc[date] * weights).sum()
+                    daily_capital *= (1 + daily_return)
+                    self.daily_values[strategy].append(daily_capital)
+
+            # Actualizar el capital inicial de cada estrategia con el último valor de capital diario
+            capital_per_strategy = {strategy: self.daily_values[strategy][-1] for strategy in self.strategies}
+
+            current_date = next_rebalance_date + timedelta(days=1)
+
+        # Graficar el valor del portafolio diariamente
+        self.plot_portfolio()
+
+    def plot_portfolio(self):
+        max_length = max(len(values) for values in self.daily_values.values())
+        dates = pd.date_range(start=self.start_date, periods=max_length, freq='D')
+        plt.figure(figsize=(14, 8))
+        for strategy, values in self.daily_values.items():
+            # Asegúrate de que las longitudes coincidan
+            if len(values) < max_length:
+                # Rellenar con NaNs si los valores son demasiado cortos
+                values += [np.nan] * (max_length - len(values))
+            plt.plot(dates, values, label=f'Valor del Portafolio - {strategy}')
+        plt.title('Evolución Diaria del Valor del Portafolio por Estrategia')
+        plt.xlabel('Fecha')
+        plt.ylabel('Valor del Portafolio ($)')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+    
+
