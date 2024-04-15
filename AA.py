@@ -825,6 +825,36 @@ class AssetAllocation:
 
         return -risk_parity_ratio
     
+    def cvar(self, weights, alpha=0.05, Smart=False):
+        """
+        Calculate the Conditional Value at Risk (CVaR) for a given set of asset weights.
+        This metric focuses on the expected losses in the worst alpha percent of cases, useful for risk management and 
+        portfolio optimization, particularly in minimizing potential extreme losses.
+
+        Parameters:
+        - weights: array-like, the weights of the assets in the portfolio.
+        - alpha: float, confidence level for CVaR calculation (e.g., 0.05 for 5%).
+
+        Returns:
+        - float, the CVaR of the portfolio for its minimization in optimization routines.
+
+        Steps:
+        1. Calculate the portfolio returns using the current weights.
+        2. Determine the Value at Risk (VaR) at the specified alpha quantile.
+        3. Calculate CVaR as the average of the returns that are below the VaR threshold.
+       
+        """
+        # Step 1: Calculate the portfolio returns
+        portfolio_returns = self.asset_returns.dot(weights)
+
+        # Step 2: Calculate VaR at the specified alpha quantile
+        VaR = np.percentile(portfolio_returns, alpha * 100)
+    
+        # Step 3: Calculate CVaR as the mean of the returns below the VaR threshold
+        CVaR = portfolio_returns[portfolio_returns <= VaR].mean()
+    
+        return CVaR
+    
     
     def calculate_hrp_weights(self):
         hrp = HierarchicalRiskParity(self.asset_returns)
@@ -898,7 +928,7 @@ class AssetAllocation:
     
     
     def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
-        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity"]
+        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity","CVaR"]
         
         if self.bl_expectations_set:
             optimization_names.append("Black-Litterman")
@@ -920,7 +950,8 @@ class AssetAllocation:
             (self.semivariance_ratio, False),
             (self.neg_safety_first_ratio, False),
             (self.neg_sortino_ratio, False),
-            (self.neg_risk_parity_ratio, False)
+            (self.neg_risk_parity_ratio, False),
+            (self.cvar, False)
         ]
         
         
@@ -1035,4 +1066,3 @@ class DynamicBacktester:
         plt.grid(True)
         plt.show()
     
-
