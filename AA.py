@@ -1004,49 +1004,48 @@ class DynamicBacktester:
 
     def run_backtest(self):
         current_date = self.start_date
-
+        
+        # Inicializa el capital por estrategia al capital inicial
+        capital_per_strategy = {strategy: self.initial_capital for strategy in self.strategies}
+    
         while current_date <= self.end_date:
             next_rebalance_date = min(current_date + timedelta(days=6*30), self.end_date)
-
-            # Utilizando la instancia creada para descargar datos
+            
+            # Descargar datos
             asset_prices, benchmark_prices, ff_factors = self.data_downloader.download_data(
                 start_date=current_date.strftime("%Y-%m-%d"),
                 end_date=next_rebalance_date.strftime("%Y-%m-%d"),
                 assets=self.assets, benchmark=self.benchmark
             )
-
-            # Preparar la simulación diaria
+            
             daily_returns = asset_prices.pct_change().dropna()
-
-            # Optimizar solo una vez por período de rebalanceo
+            
+            # Optimización de portafolio
             asset_allocation = AssetAllocation(
                 asset_prices=asset_prices,
                 benchmark_prices=benchmark_prices,
                 rf=self.rf,
                 ff_factors=ff_factors,
-                ff_factors_expectations = self.ff_factors_expectations
+                ff_factors_expectations=self.ff_factors_expectations
             )
             optimized_portfolios = asset_allocation.Optimize_Portfolio(method=self.method)
            
-
-            capital_per_strategy = {strategy: self.initial_capital for strategy in self.strategies}
-
             for strategy in self.strategies:
                 weights = optimized_portfolios.loc[strategy, self.assets]
-
-                # Calcular rendimiento del portafolio diariamente hasta el próximo rebalanceo
+                
+                # Usar el capital final del periodo anterior como capital inicial
                 daily_capital = capital_per_strategy[strategy]
                 for date in daily_returns.index:
                     daily_return = (daily_returns.loc[date] * weights).sum()
                     daily_capital *= (1 + daily_return)
                     self.daily_values[strategy].append(daily_capital)
-
+    
             # Actualizar el capital inicial de cada estrategia con el último valor de capital diario
             capital_per_strategy = {strategy: self.daily_values[strategy][-1] for strategy in self.strategies}
-
+            
             current_date = next_rebalance_date + timedelta(days=1)
-
-        # Graficar el valor del portafolio diariamente
+    
+        # Graficar los resultados
         self.plot_portfolio()
 
     def plot_portfolio(self):
