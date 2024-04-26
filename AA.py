@@ -974,6 +974,26 @@ class AssetAllocation:
     
     
 class DynamicBacktester:
+    """
+    A class to perform dynamic backtesting of portfolio strategies over a specified period using asset prices and
+    benchmarks.
+
+    Attributes:
+        start_date (datetime): The start date of the backtesting period.
+        end_date (datetime): The end date of the backtesting period.
+        assets (list): A list of asset identifiers used in the portfolio.
+        benchmark (str): The identifier for the benchmark asset.
+        rf (float): The risk-free rate to be used in optimizations.
+        initial_capital (float, optional): The initial capital amount for the backtest. Default is $1,000,000.
+        strategies (list, optional): A list of strategy names to be tested. Default is ['Max Sharpe'].
+        ff_factors_expectations (dict, optional): Expected returns for different Fama-French factors.
+        method (str, optional): The optimization method to be used. If not specified, the class defaults to internal settings.
+
+    Methods:
+        run_backtest(): Executes the backtesting process over the specified date range and for the specified strategies.
+        plot_portfolio(): Plots the portfolio values over time for each strategy.
+    """
+
     def __init__(self, start_date, end_date, assets, benchmark, rf, initial_capital=1_000_000, strategies=None, ff_factors_expectations=None, method=None):
         self.start_date = datetime.strptime(start_date, "%Y-%m-%d")
         self.end_date = datetime.strptime(end_date, "%Y-%m-%d")
@@ -990,6 +1010,11 @@ class DynamicBacktester:
         self.method = method
 
     def run_backtest(self):
+        """
+        Executes the backtesting of selected investment strategies by rebalancing at defined intervals and tracking portfolio values.
+        
+        This method iteratively updates portfolio allocations using the specified optimization method, recalculates portfolio values based on asset returns, and adjusts the capital allocated to each strategy. It continues until the end date of the backtest is reached.
+        """
         current_date = self.start_date
         
         capital_per_strategy = {strategy: self.initial_capital for strategy in self.strategies}
@@ -1028,20 +1053,16 @@ class DynamicBacktester:
             
             current_date = next_rebalance_date + timedelta(days=1)
     
-        self.plot_portfolio()
-
     def plot_portfolio(self):
+        """
+        Plots the daily values of the portfolio for each strategy over the course of the backtest.
+
+        This method generates a line plot displaying the growth of the portfolio value over time for each strategy, aiding in visual comparison of strategy performance.
+        """
         max_length = max(len(values) for values in self.daily_values.values())
         dates = pd.date_range(start=self.start_date, periods=max_length, freq='D')
         plt.figure(figsize=(14, 8))
         for strategy, values in self.daily_values.items():
             if len(values) < max_length:
                 values += [np.nan] * (max_length - len(values))
-            plt.plot(dates, values, label=f'Portafolio {strategy}')
-        plt.title('Valor del Portafolio por Estrategia')
-        plt.xlabel('Fecha')
-        plt.ylabel('Valor del Portafolio ($)')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-    
+            plt.plot(dates
