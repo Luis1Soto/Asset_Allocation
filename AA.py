@@ -227,28 +227,30 @@ class AssetAllocation:
     
     def calculate_ff_expected_returns(self, ff_factors_expectations):
         expected_returns = {}
+        fallback_return = self.asset_returns.mean().mean()  
+    
         for asset in self.asset_prices.columns:
-            # index line up
             aligned_returns = self.asset_returns[asset].dropna()
-            aligned_factors = self.ff_factors.loc[aligned_returns.index]  
-            X = sm.add_constant(aligned_factors)  
-            y = aligned_returns
-
-            model = sm.OLS(y, X).fit()
-            betas = model.params
+            aligned_factors = self.ff_factors.loc[aligned_returns.index]
             
+            if len(aligned_returns) < 20:  
+                expected_returns[asset] = fallback_return
+                continue
+    
+            X = sm.add_constant(aligned_factors)
+            y = aligned_returns
+    
             try:
-                
-            # Calculate the expected return using the model coefficients and factor expectations
+                model = sm.OLS(y, X).fit()
+                betas = model.params
                 expected_return = betas['const'] + sum(betas[factor] * ff_factors_expectations[factor] for factor in ['Mkt-RF', 'SMB', 'HML'])
                 expected_returns[asset] = expected_return
-            except:
-                pass
-        try:
-            self.ff_expected_returns = pd.Series(expected_returns)
-        except:
-                pass
-            
+            except Exception as e:
+                print(f"Failed to calculate expected returns for {asset}: {str(e)}")
+                expected_returns[asset] = fallback_return  
+    
+        self.ff_expected_returns = pd.Series(expected_returns)
+                
     def RMT_filtering(self):
         """
         Filters the covariance matrix of asset returns using Random Matrix Theory (RMT)
@@ -647,39 +649,23 @@ class AssetAllocation:
     
         return -annual_sharpe_ratio
     
+    
     def neg_sharpe_ratio_ff(self, weights, *args):
-        
-        """
-        Calculate the negative Sharpe Ratio of an investment portfolio using the Fama-French expected returns model.
-
-        The Sharpe Ratio is a measure of risk-adjusted return of an investment. It is the ratio of the excess return of the investment over the risk-free rate to the standard deviation of the investment returns (volatility). This function returns the negative Sharpe Ratio to facilitate minimization in optimization problems. The Fama-French model is used to estimate the expected returns of the portfolio.
-
-        Parameters:
-        - weights (numpy.ndarray): A 1D array of portfolio weights for each asset.
-        - *args: Additional arguments, not used in this function but included for compatibility with optimization routines.
-
-        Returns:
-        - float: The negative annualized Sharpe Ratio of the portfolio.
-
-        The function calculates the daily excess return by dotting the portfolio weights with the Fama-French expected returns, subtracting the daily risk-free rate, then annualizes this return. It also calculates the portfolio's annual volatility as the standard deviation of portfolio returns, scaled up to an annual measure. The annual Sharpe Ratio is the annual excess return divided by the annual volatility, and its negative value is returned.
-        """
-        
-        ff_expected_returns = self.ff_expected_returns
+        if self.ff_expected_returns is None or self.ff_expected_returns.empty:
+            return float('inf')
+    
         trading_days = 252
-
-        # Use expected returns based on Fama-French
-        daily_excess_return = np.dot(weights, ff_expected_returns) - self.rf_daily
+    
+        daily_excess_return = np.dot(weights, self.ff_expected_returns) - self.rf_daily
         annual_excess_return = daily_excess_return * trading_days
-
-        # Calculate portfolio volatility
+    
         daily_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
         annual_volatility = daily_volatility * np.sqrt(trading_days)
-
-        # Calculate the annualized Sharpe ratio
+    
         annual_sharpe_ratio_ff = annual_excess_return / annual_volatility
-
+    
         return -annual_sharpe_ratio_ff
-
+    
 
     def neg_omega_ratio(self, weights, Smart=False):
         """
@@ -928,7 +914,7 @@ class AssetAllocation:
     
     
     def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
-        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity","CVaR"]
+        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity","CVaR", "Max Sharpe FF"]
         
         if self.bl_expectations_set:
             optimization_names.append("Black-Litterman")
@@ -951,7 +937,8 @@ class AssetAllocation:
             (self.neg_safety_first_ratio, False),
             (self.neg_sortino_ratio, False),
             (self.neg_risk_parity_ratio, False),
-            (self.cvar, False)
+            (self.cvar, False),
+            (self.neg_sharpe_ratio_ff, False)
         ]
         
         
@@ -996,7 +983,7 @@ class DynamicBacktester:
         self.strategies = strategies if strategies is not None else ['Max Sharpe']
         self.portfolio_values = {strategy: [] for strategy in self.strategies}
         self.daily_values = {strategy: [] for strategy in self.strategies}
-        self.data_downloader = DataDownloader()  # Creando una instancia de DataDownloader aquí
+        self.data_downloader = DataDownloader()  
         self.ff_factors_expectations = ff_factors_expectations
         self.rf = rf
         self.rf_daily = self.rf / 252
@@ -1005,13 +992,11 @@ class DynamicBacktester:
     def run_backtest(self):
         current_date = self.start_date
         
-        # Inicializa el capital por estrategia al capital inicial
         capital_per_strategy = {strategy: self.initial_capital for strategy in self.strategies}
     
         while current_date <= self.end_date:
             next_rebalance_date = min(current_date + timedelta(days=6*30), self.end_date)
             
-            # Descargar datos
             asset_prices, benchmark_prices, ff_factors = self.data_downloader.download_data(
                 start_date=current_date.strftime("%Y-%m-%d"),
                 end_date=next_rebalance_date.strftime("%Y-%m-%d"),
@@ -1020,32 +1005,29 @@ class DynamicBacktester:
             
             daily_returns = asset_prices.pct_change().dropna()
             
-            # Optimización de portafolio
             asset_allocation = AssetAllocation(
                 asset_prices=asset_prices,
                 benchmark_prices=benchmark_prices,
                 rf=self.rf,
                 ff_factors=ff_factors,
-                ff_factors_expectations=self.ff_factors_expectations
+                ff_factors_expectations=self.ff_factors_expectations,
+                RMT_filtering=True
             )
             optimized_portfolios = asset_allocation.Optimize_Portfolio(method=self.method)
            
             for strategy in self.strategies:
                 weights = optimized_portfolios.loc[strategy, self.assets]
                 
-                # Usar el capital final del periodo anterior como capital inicial
                 daily_capital = capital_per_strategy[strategy]
                 for date in daily_returns.index:
                     daily_return = (daily_returns.loc[date] * weights).sum()
                     daily_capital *= (1 + daily_return)
                     self.daily_values[strategy].append(daily_capital)
     
-            # Actualizar el capital inicial de cada estrategia con el último valor de capital diario
             capital_per_strategy = {strategy: self.daily_values[strategy][-1] for strategy in self.strategies}
             
             current_date = next_rebalance_date + timedelta(days=1)
     
-        # Graficar los resultados
         self.plot_portfolio()
 
     def plot_portfolio(self):
@@ -1053,12 +1035,10 @@ class DynamicBacktester:
         dates = pd.date_range(start=self.start_date, periods=max_length, freq='D')
         plt.figure(figsize=(14, 8))
         for strategy, values in self.daily_values.items():
-            # Asegúrate de que las longitudes coincidan
             if len(values) < max_length:
-                # Rellenar con NaNs si los valores son demasiado cortos
                 values += [np.nan] * (max_length - len(values))
-            plt.plot(dates, values, label=f'Valor del Portafolio - {strategy}')
-        plt.title('Evolución Diaria del Valor del Portafolio por Estrategia')
+            plt.plot(dates, values, label=f'Portafolio {strategy}')
+        plt.title('Valor del Portafolio por Estrategia')
         plt.xlabel('Fecha')
         plt.ylabel('Valor del Portafolio ($)')
         plt.legend()
