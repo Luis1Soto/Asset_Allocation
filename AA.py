@@ -1065,4 +1065,4 @@ class DynamicBacktester:
         for strategy, values in self.daily_values.items():
             if len(values) < max_length:
                 values += [np.nan] * (max_length - len(values))
-            plt.plot(dates
+            plt.plot(dates)

@@ -1,7 +1,7 @@
 import streamlit as st
 from AA import DataDownloader, AssetAllocation
 
-# Estilos personalizados
+# Custom Styles
 st.markdown(
     """
     <style>
@@ -34,55 +34,65 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Mostrar el logo en la parte superior de todas las páginas
+# Display logo at the top of all pages
 st.image("https://www.pilou.io/wp-content/uploads/2023/08/Logo-PILOU-28.png", width=200)
 
-# Configuración de la página activa
+# Page active setup
 if 'page' not in st.session_state:
-    st.session_state.page = 'Inicio'
+    st.session_state.page = 'Home'
 
-# Barra de botones para la navegación
-col1, col2, col3 = st.columns([1, 1, 1])
+# Navigation buttons bar
+col1, col2 = st.columns([1, 1])
 with col1:
-    if st.button("Inicio"):
-        st.session_state.page = 'Inicio'
+    if st.button("Home"):
+        st.session_state.page = 'Home'
 with col2:
-    if st.button("Backtesting"):
-        st.session_state.page = 'Backtesting'
-with col3:
-    if st.button("Black Litterman"):
-        st.session_state.page = 'Black Litterman'
+    if st.button("Strategies"):
+        st.session_state.page = 'Strategies'
 
-# Funciones para manejar cada página
+# Functions to handle each page
 def main_page():
-    st.title('Bienvenido a la Aplicación de Análisis Financiero')
+    st.title('Welcome to Backtesting AA Strategies!')
     st.markdown("""
-        Esta aplicación te permite analizar, optimizar y realizar backtesting de carteras financieras.
+        This application allows you to analyze, optimize, and perform backtesting of financial portfolios.
     """)
 
-def backtesting_page():
-    st.title('Backtesting de Estrategias')
-    st.header('Configuración de Datos para Backtesting')
-    start_date = st.date_input('Fecha de Inicio')
-    end_date = st.date_input('Fecha de Fin')
-    assets = st.text_area('Lista de Activos (separados por comas)', 'AAPL, IBM, TSLA, GOOG, NVDA')
+def strategies_page():
+    st.title('Optimization and Backtesting of Strategies')
+    start_date = st.date_input('Start Date')
+    end_date = st.date_input('End Date')
+    assets = st.text_area('List of Assets (comma-separated)', 'AAPL, IBM, TSLA, GOOG, NVDA')
     benchmark = st.text_input('Benchmark', '^GSPC')
-    rf_rate = st.number_input('Tasa Libre de Riesgo', value=0.065, step=0.001)
-    method = st.selectbox('Método de Optimización', ['MonteCarlo', 'SLSQP', 'Genetic', 'Gradient'])
+    rf_rate = st.number_input('Risk-Free Rate', value=0.065, step=0.001)
+    method = st.selectbox('Optimization Method', ['MonteCarlo', 'SLSQP', 'Genetic', 'Gradient'])
+
+    strategies = [
+        "Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega",
+        "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First",
+        "Max Sortino", "Risk Parity", "CVaR", "Max Sharpe FF", "HRP", "Black-Litterman"
+    ]
+    selected_strategies = st.multiselect('Select optimization strategies:', strategies, default=strategies)
+
+    if "Black-Litterman" in selected_strategies:
+        st.header('Black Litterman Setup')
+        P = st.text_area('Matrix P (separate rows with ";", values with ",")', '1,0;0,1')
+        Q = st.text_area('Vector Q (comma-separated values)', '0.05,0.05')
+        Omega = st.text_area('Matrix Omega (separate rows with ";", values with ",")', '0.01,0;0,0.01')
+        tau = st.number_input('Tau (confidence in equilibrium)', value=0.05, step=0.01)
 
     if method == 'MonteCarlo':
-        n_simulations = st.number_input('Número de Simulaciones', min_value=1000, max_value=100000, value=10000, step=1000)
+        n_simulations = st.number_input('Number of Simulations', min_value=1000, max_value=100000, value=10000, step=1000)
     elif method == 'Genetic':
-        population_size = st.number_input('Tamaño de la Población', min_value=50, max_value=500, value=100, step=50)
-        generations = st.number_input('Generaciones', min_value=100, max_value=500, value=200, step=50)
-        crossover_rate = st.slider('Tasa de Cruce', min_value=0.1, max_value=1.0, value=0.7)
-        mutation_rate = st.slider('Tasa de Mutación', min_value=0.01, max_value=0.1, value=0.1)
+        population_size = st.number_input('Population Size', min_value=50, max_value=500, value=100, step=50)
+        generations = st.number_input('Generations', min_value=100, max_value=500, value=200, step=50)
+        crossover_rate = st.slider('Crossover Rate', min_value=0.1, max_value=1.0, value=0.7)
+        mutation_rate = st.slider('Mutation Rate', min_value=0.01, max_value=0.1, value=0.1)
     elif method == 'Gradient':
-        learning_rate = st.slider('Tasa de Aprendizaje', min_value=0.001, max_value=0.1, value=0.01)
-        max_iters = st.number_input('Máximo de Iteraciones', min_value=100, max_value=10000, value=1000)
-        tol = st.slider('Tolerancia', min_value=1e-8, max_value=1e-4, value=1e-6, format='%e')
+        learning_rate = st.slider('Learning Rate', min_value=0.001, max_value=0.1, value=0.01)
+        max_iters = st.number_input('Maximum Iterations', min_value=100, max_value=10000, value=1000)
+        tol = st.slider('Tolerance', min_value=1e-8, max_value=1e-4, value=1e-6, format='%e')
 
-    if st.button('Optimizar'):
+    if st.button('Optimize Strategies'):
         if start_date and end_date:
             assets_list = [asset.strip() for asset in assets.split(',')]
             downloader = DataDownloader()
@@ -98,42 +108,13 @@ def backtesting_page():
             elif method == 'Gradient':
                 results = asset_allocation.optimize_portfolio(method=method, learning_rate=learning_rate, max_iters=max_iters, tol=tol)
 
-            st.header('Resultados de Optimización')
+            st.header('Optimization Results')
             st.dataframe(results)
         else:
-            st.error('Por favor ingresa las fechas de inicio y fin.')
+            st.error('Please enter both start and end dates.')
 
-def black_litterman_page():
-    st.title('Optimización Black Litterman')
-    st.header('Configuración de Datos para Black Litterman')
-    start_date = st.date_input('Fecha de Inicio')
-    end_date = st.date_input('Fecha de Fin')
-    assets = st.text_area('Lista de Activos', 'AAPL, IBM, TSLA, GOOG, NVDA')
-    benchmark = st.text_input('Benchmark', '^GSPC')
-    rf_rate = st.number_input('Tasa Libre de Riesgo', value=0.065, step=0.001)
-    P = st.text_area('Matrix P (separar filas con ";", valores con ",")', '1,0;0,1')
-    Q = st.text_area('Vector Q (valores separados por comas)', '0.05,0.05')
-    Omega = st.text_area('Matrix Omega (separar filas con ";", valores con ",")', '0.01,0;0,0.01')
-    tau = st.number_input('Tau (confianza en el equilibrio)', value=0.05, step=0.01)
-    if st.button('Optimizar Black Litterman'):
-        if start_date and end_date:
-            downloader = DataDownloader()
-            asset_prices, benchmark_prices = downloader.download_data(start_date, end_date, assets.split(', '), benchmark)
-            asset_allocation = AssetAllocation(asset_prices, benchmark_prices, rf_rate)
-            P = [list(map(float, row.split(','))) for row in P.split(';')]
-            Q = list(map(float, Q.split(',')))
-            Omega = [list(map(float, row.split(','))) for row in Omega.split(';')]
-            asset_allocation.set_blacklitterman_expectations(P, Q, tau, Omega)
-            results = asset_allocation.optimize_portfolio(method='Black-Litterman')
-            st.header('Resultados de Optimización')
-            st.dataframe(results)
-        else:
-            st.error('Por favor ingresa las fechas de inicio y fin.')
-
-# Mostrar la página correspondiente
-if st.session_state.page == 'Inicio':
+# Display the corresponding page
+if st.session_state.page == 'Home':
     main_page()
-elif st.session_state.page == 'Backtesting':
-    backtesting_page()
-elif st.session_state.page == 'Black Litterman':
-    black_litterman_page()
+elif st.session_state.page == 'Strategies':
+    strategies_page()
