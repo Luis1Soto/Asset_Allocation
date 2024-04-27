@@ -8,7 +8,7 @@ import statsmodels.api as sm
 from scipy.stats import norm
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist, squareform
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as pltx
 from datetime import datetime, timedelta
 class DataDownloader:
     
