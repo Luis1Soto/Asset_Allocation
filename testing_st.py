@@ -302,12 +302,13 @@ def strategies_page():
                 end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
                 benchmark=benchmark, initial_capital=initial_capital, strategies=selected_strategies,
                 rf=rf_rate, method=method)
-            backtest.run_backtest()
             st.header('Backtesting Results')
-            # Assuming we have a method to visualize or return results
-            plot_portfolio(backtest)
+            backtest.run_backtest()
+            fig = backtest.plot_portfolio()  # This now returns a Plotly figure
+            st.plotly_chart(fig, use_container_width=True)  # Display the Plotly figure in Streamlit
         else:
             st.error('Please enter both start and end dates to run the backtest.')
+
 # Display the corresponding page
 if st.session_state.page == 'Home':
     main_page()
