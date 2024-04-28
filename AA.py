@@ -916,41 +916,38 @@ class AssetAllocation:
         return weights, value
     
     
-    def Optimize_Portfolio(self, method="MonteCarlo", **kwargs):
-        optimization_names = ["Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega", "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First","Max Sortino","Risk Parity","CVaR", "Max Sharpe FF"]
-        
+    def Optimize_Portfolio(self, selected_strategies, method="MonteCarlo", **kwargs):
+        # Listado de todas las posibles estrategias y sus correspondientes funciones y banderas
+        all_strategies = {
+            "Max Sharpe": (self.neg_sharpe_ratio, False),
+            "Max (Smart) Sharpe": (self.neg_sharpe_ratio, True),
+            "Max Omega": (self.neg_omega_ratio, False),
+            "Max (Smart) Omega": (self.neg_omega_ratio, True),
+            "Min VaR (Empirical)": (self.portfolio_var, True),
+            "Min VaR (Parametric)": (self.portfolio_var, False),
+            "Semivariance": (self.semivariance_ratio, False),
+            "Safety-First": (self.neg_safety_first_ratio, False),
+            "Max Sortino": (self.neg_sortino_ratio, False),
+            "Risk Parity": (self.neg_risk_parity_ratio, False),
+            "CVaR": (self.cvar, False),
+            "Max Sharpe FF": (self.neg_sharpe_ratio_ff, False),
+            "HRP": (self.calculate_hrp_weights, None)  # Si es necesario manejar de forma especial
+        }
+
         if self.bl_expectations_set:
-            optimization_names.append("Black-Litterman")
-        
+            all_strategies["Black-Litterman"] = (self.neg_BL_returns, False)
+
+        # Filtrar solo las estrategias seleccionadas
+        optimizations = [(func, is_smart) for name, (func, is_smart) in all_strategies.items() if name in selected_strategies]
+
         optimized_weights = []
         optimized_values = []
+        optimization_names = selected_strategies  # Usar solo las estrategias seleccionadas
 
         optimize_function = getattr(self, f"optimize_{method}", None)
-
         if not optimize_function:
             raise ValueError(f"Optimization method '{method}' not recognized.")
-        optimizations = [
-            (self.neg_sharpe_ratio, False),
-            (self.neg_sharpe_ratio, True),  # 'True' = Smart Sharpe
-            (self.neg_omega_ratio, False),
-            (self.neg_omega_ratio, True),   # 'True' = Smart Omega
-            (self.portfolio_var, True),     # Empirical VaR
-            (self.portfolio_var, False),    # Parametric VaR
-            (self.semivariance_ratio, False),
-            (self.neg_safety_first_ratio, False),
-            (self.neg_sortino_ratio, False),
-            (self.neg_risk_parity_ratio, False),
-            (self.cvar, False),
-            (self.neg_sharpe_ratio_ff, False)
-        ]
-        
-        
-        if self.bl_expectations_set:
-            optimizations.append((self.neg_BL_returns, False))
-        
 
-        
-        
         for i, (objective_function, is_smart) in enumerate(optimizations):
             weights, value = self.optimize_generic(
                 optimize_function,
@@ -959,22 +956,22 @@ class AssetAllocation:
                 **kwargs
             )
             if optimization_names[i] in ["Min VaR (Empirical)", "Min VaR (Parametric)"]:
-                value *= -1
+                value *= -1  # Ajustar el valor si es necesario
             optimized_weights.append(weights)
             optimized_values.append(value)
 
         results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=self.asset_prices.columns)
         results_df['Optimized Value'] = optimized_values
-        # HRP
-        hrp_weights = self.calculate_hrp_weights()
-        #results_df.loc['HRP'] = hrp_weights.append(pd.Series({"Optimized Value": np.nan}))
-        # Asumiendo que hrp_weights es una pd.Series y deseas agregar un solo ítem:
-        hrp_weights['Optimized Value'] = np.nan
-        results_df.loc['HRP'] = hrp_weights
+
+        # HRP si es seleccionado
+        if "HRP" in selected_strategies:
+            hrp_weights = self.calculate_hrp_weights()
+            hrp_weights['Optimized Value'] = np.nan  # Asumiendo que es un resultado único
+            results_df.loc['HRP'] = hrp_weights
+
         return results_df
 
 
-    
     
 class DynamicBacktester:
     """

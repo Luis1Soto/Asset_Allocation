@@ -231,19 +231,33 @@ def strategies_page():
         Q = process_input_vector(Q_input)
         if Omega is None:  # Verificar si Omega es cuadrada
             return  # Detener ejecución si hay un error
-
+        
     if st.button('Optimize Strategies'):
         assets_list = [asset.strip() for asset in assets.split(',')]
         downloader = DataDownloader()
         asset_prices, benchmark_prices, ff_factors = downloader.download_data(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), assets_list, benchmark)
         asset_allocation = AssetAllocation(asset_prices, benchmark_prices, rf_rate, ff_factors=ff_factors)
-        
+
         if "Black-Litterman" in selected_strategies:
             asset_allocation.set_blacklitterman_expectations(P, Q, tau, Omega)
 
-        results = asset_allocation.Optimize_Portfolio(method=method)
+        results = asset_allocation.Optimize_Portfolio(selected_strategies, method=method)
+
         st.header('Optimization Results')
-        st.dataframe(results)
+        # Aplicamos formato al dataframe antes de mostrarlo
+        # Formatear todas las celdas excepto las de 'Optimized Value'
+        formatted_results = results.style.format({
+            col: "{:.2%}" for col in results.columns if col != 'Optimized Value'  # Aplica formato de porcentaje solo a las columnas que no son 'Optimized Value'
+        }).set_properties(**{
+            'text-align': 'right',
+            'color': 'black',
+            'font-weight': 'bold',
+            'background-color': 'white'
+        }).set_table_styles([{
+            'selector': 'th',
+            'props': [('font-size', '16px'), ('text-align', 'center'), ('background-color', 'purple'), ('color', 'white')]
+        }])
+        st.dataframe(formatted_results)
 
 
     if st.button('Dynamic Backtest'):
