@@ -1054,6 +1054,7 @@ class DynamicBacktester:
             current_date = next_rebalance_date + timedelta(days=1)
     
  
+
     def plot_portfolio(self):
         """
         Plots the daily values of the portfolio for each strategy over the course of the backtest.

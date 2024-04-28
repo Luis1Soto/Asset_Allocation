@@ -29,7 +29,7 @@ if 'page' not in st.session_state:
     st.session_state.page = 'Home'
 
 # Navigation buttons
-col1, col2, col3 = st.columns([1, 1, 1])
+col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 with col1:
     if st.button("Home"):
         st.session_state.page = 'Home'
@@ -39,6 +39,9 @@ with col2:
 with col3:
     if st.button("Strategies"):
         st.session_state.page = 'Strategies'
+with col4:
+    if st.button("Backtesting"):
+        st.session_state.page = 'Backtesting'
 
 def main_page():
     st.markdown("<h1 class='title'>Welcome to Backtesting AA Strategies!</h1>", unsafe_allow_html=True)
@@ -70,7 +73,9 @@ def download_data_page():
     st.session_state.download_data['end_date'] = st.date_input('End Date:', st.session_state.download_data['end_date'])
     st.session_state.download_data['assets'] = st.text_area('List of Assets (comma-separated)', st.session_state.download_data['assets'])
     st.session_state.download_data['benchmark'] = st.text_input('Benchmark', st.session_state.download_data['benchmark'])
-
+    st.session_state.start_date = st.session_state.download_data['start_date']
+    st.session_state.end_date = st.session_state.download_data['end_date']
+    
     if st.button('Download and Plot Data'):
         assets_list = [asset.strip() for asset in st.session_state.download_data['assets'].split(',')]
         
@@ -110,6 +115,22 @@ def download_data_page():
 
         progress_bar.empty()
         progress_text.empty()
+
+def plot_pie_chart(weights, strategy_name):
+    labels = weights.index
+    values = weights.values
+    # Definir la paleta de colores
+    colors = ['#FFC8DE', '#FF5699', '#4B1865', '#D291BC', '#9055A2']  # Paleta de colores personalizada
+
+    fig = go.Figure(data=[go.Pie(labels=labels, values=values, textinfo='label+percent',
+                                 insidetextorientation='radial', marker=dict(colors=colors))])
+    fig.update_layout(title_text=f'Portfolio Weights for {strategy_name}', title_x=0.5,
+                      legend_title="Assets",
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    return fig
+
+
+
 
 def strategies_page():
     st.markdown("<h1 class='title'>Optimization and Backtesting of Strategies</h1>", unsafe_allow_html=True)
@@ -197,7 +218,44 @@ def strategies_page():
         st.write("### Selected Strategy Descriptions:")
         for strategy in selected_strategies:
             st.write(f"**{strategy}:** {strategy_descriptions[strategy]}")
+    
+    if st.button('Optimize Strategies'):
+        assets_list = [asset.strip() for asset in assets.split(',')]
+        downloader = DataDownloader()
+        asset_prices, benchmark_prices, ff_factors = downloader.download_data(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), assets_list, benchmark)
+        asset_allocation = AssetAllocation(asset_prices, benchmark_prices, rf_rate, ff_factors=ff_factors)
+
+        if "Black-Litterman" in selected_strategies:
+            asset_allocation.set_blacklitterman_expectations(P, Q, tau, Omega)
+
+        results = asset_allocation.Optimize_Portfolio(selected_strategies, method=method)
+        st.session_state.optimized_weights = results.drop(columns=['Optimized Value'])  
+        st.session_state.selected_strategies = selected_strategies  # Guarda las estrategias seleccionada
+
+        st.header('Optimization Results')
+        # Aplicamos formato al dataframe antes de mostrarlo
+        # Formatear todas las celdas excepto las de 'Optimized Value'
+        formatted_results = results.style.format({
+            col: "{:.2%}" for col in results.columns if col != 'Optimized Value'  # Aplica formato de porcentaje solo a las columnas que no son 'Optimized Value'
+        }).set_properties(**{
+            'text-align': 'right',
+            'color': 'black',
+            'font-weight': 'bold',
+            'background-color': 'white'
+        }).set_table_styles([{
+            'selector': 'th',
+            'props': [('font-size', '16px'), ('text-align', 'center'), ('background-color', 'purple'), ('color', 'white')]
+        }])
+        st.dataframe(formatted_results)
+
+        for strategy in selected_strategies:
+            if strategy in results.index:
+                weights = results.loc[strategy, results.columns != 'Optimized Value']  # Excluir la columna de valores optimizados
+                fig = plot_pie_chart(weights, strategy)
+                st.plotly_chart(fig, use_container_width=True)
+
             
+                  
     # Fama-French Factors setup if relevant strategies are selected
     ff_factors_expectations = {}
     if any(x in selected_strategies for x in ["Max Sharpe FF"]):
@@ -209,7 +267,10 @@ def strategies_page():
                 'HML': st.number_input('High Minus Low (HML)', value=0.03, step=0.01),
                 'RF': st.number_input('Risk-Free Rate (RF)', value=0.02, step=0.01)
             }
-
+    
+    
+            
+            
     def process_input_matrix(input_string):
         """Procesa una entrada de string formateada y devuelve una matriz numpy."""
         matrix = np.array([list(map(float, row.split(','))) for row in input_string.split(';')])
@@ -232,34 +293,7 @@ def strategies_page():
         if Omega is None:  # Verificar si Omega es cuadrada
             return  # Detener ejecución si hay un error
         
-    if st.button('Optimize Strategies'):
-        assets_list = [asset.strip() for asset in assets.split(',')]
-        downloader = DataDownloader()
-        asset_prices, benchmark_prices, ff_factors = downloader.download_data(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), assets_list, benchmark)
-        asset_allocation = AssetAllocation(asset_prices, benchmark_prices, rf_rate, ff_factors=ff_factors)
-
-        if "Black-Litterman" in selected_strategies:
-            asset_allocation.set_blacklitterman_expectations(P, Q, tau, Omega)
-
-        results = asset_allocation.Optimize_Portfolio(selected_strategies, method=method)
-
-        st.header('Optimization Results')
-        # Aplicamos formato al dataframe antes de mostrarlo
-        # Formatear todas las celdas excepto las de 'Optimized Value'
-        formatted_results = results.style.format({
-            col: "{:.2%}" for col in results.columns if col != 'Optimized Value'  # Aplica formato de porcentaje solo a las columnas que no son 'Optimized Value'
-        }).set_properties(**{
-            'text-align': 'right',
-            'color': 'black',
-            'font-weight': 'bold',
-            'background-color': 'white'
-        }).set_table_styles([{
-            'selector': 'th',
-            'props': [('font-size', '16px'), ('text-align', 'center'), ('background-color', 'purple'), ('color', 'white')]
-        }])
-        st.dataframe(formatted_results)
-
-
+# Dynamic Backtest button
     if st.button('Dynamic Backtest'):
         if start_date and end_date:
             assets_list = [asset.strip() for asset in assets.split(',')]
@@ -268,13 +302,12 @@ def strategies_page():
                 end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
                 benchmark=benchmark, initial_capital=initial_capital, strategies=selected_strategies,
                 rf=rf_rate, method=method)
-            st.header('Backtesting Results')
             backtest.run_backtest()
-            fig = backtest.plot_portfolio()  # This now returns a Plotly figure
-            st.plotly_chart(fig, use_container_width=True)  # Display the Plotly
+            st.header('Backtesting Results')
+            # Assuming we have a method to visualize or return results
+            plot_portfolio(backtest)
         else:
             st.error('Please enter both start and end dates to run the backtest.')
-
 # Display the corresponding page
 if st.session_state.page == 'Home':
     main_page()
@@ -283,3 +316,6 @@ elif st.session_state.page == 'Download Data':
 
 elif st.session_state.page == 'Strategies':
     strategies_page()
+    
+elif st.session_state.page == 'Backtesting':
+    backtesting_page()
