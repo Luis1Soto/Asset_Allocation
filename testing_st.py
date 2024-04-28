@@ -58,34 +58,77 @@ def process_input_matrix(input_string):
     
 def download_data_page():
     st.markdown("<h1 class='title'>Download and Visualize Financial Data</h1>", unsafe_allow_html=True)
-    start_date = st.date_input('Start Date:', date(2019, 1, 1))
-    end_date = st.date_input('End Date:', date(2023, 12, 31))
-    assets = st.text_area('List of Assets (comma-separated)', 'AAPL, IBM, TSLA, GOOG, NVDA')
-    benchmark = st.text_input('Benchmark', '^GSPC')
+    if 'download_data' not in st.session_state:
+        st.session_state.download_data = {
+            "start_date": date(2019, 1, 1),
+            "end_date": date(2023, 12, 31),
+            "assets": "AAPL, IBM, TSLA, GOOG, NVDA",
+            "benchmark": "^GSPC"
+        }
+    
+    st.session_state.download_data['start_date'] = st.date_input('Start Date:', st.session_state.download_data['start_date'])
+    st.session_state.download_data['end_date'] = st.date_input('End Date:', st.session_state.download_data['end_date'])
+    st.session_state.download_data['assets'] = st.text_area('List of Assets (comma-separated)', st.session_state.download_data['assets'])
+    st.session_state.download_data['benchmark'] = st.text_input('Benchmark', st.session_state.download_data['benchmark'])
 
     if st.button('Download and Plot Data'):
-        assets_list = [asset.strip() for asset in assets.split(',')]
-        downloader = DataDownloader()
-        asset_prices, benchmark_prices, _ = downloader.download_data(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), assets_list, benchmark)
+        assets_list = [asset.strip() for asset in st.session_state.download_data['assets'].split(',')]
         
-        # Create plot using Plotly
+        # Inicia la barra de progreso
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
+        downloader = DataDownloader()
+        progress_text.text('0%')
+
+        progress_bar.progress(25)  # Avanzamos al 25%
+        progress_text.text('⏳ 25%')
+        
+        asset_prices, benchmark_prices, _ = downloader.download_data(
+            st.session_state.download_data['start_date'].strftime('%Y-%m-%d'),
+            st.session_state.download_data['end_date'].strftime('%Y-%m-%d'),
+            assets_list,
+            st.session_state.download_data['benchmark']
+        )
+
+        progress_bar.progress(50)  # Avanzamos al 50%
+        progress_text.text('⏳ 50%')
+        
         fig = go.Figure()
         for asset in assets_list:
             fig.add_trace(go.Scatter(x=asset_prices.index, y=asset_prices[asset], mode='lines', name=asset))
-        fig.add_trace(go.Scatter(x=benchmark_prices.index, y=benchmark_prices[benchmark], mode='lines', name=benchmark, line=dict(color='black', width=4)))
+        # Corregido para usar st.session_state
+        fig.add_trace(go.Scatter(x=benchmark_prices.index, y=benchmark_prices[st.session_state.download_data['benchmark']], mode='lines', name=st.session_state.download_data['benchmark'], line=dict(color='black', width=4)))
+        
         fig.update_layout(title='Asset Prices and Benchmark', xaxis_title='Date', yaxis_title='Price', legend_title='Legend')
         st.plotly_chart(fig, use_container_width=True)
-    
-def process_input_vector(input_string):
-    """Procesa una entrada de string formateada y devuelve un vector numpy."""
-    return np.array(list(map(float, input_string.split(','))))
+
+        progress_bar.progress(75)  # Avanzamos al 75%
+        progress_text.text('75%')
+
+        progress_bar.progress(100)  # Completa la barra al 100%
+        progress_text.text('100% - Complete ')
+
+        progress_bar.empty()
+        progress_text.empty()
 
 def strategies_page():
     st.markdown("<h1 class='title'>Optimization and Backtesting of Strategies</h1>", unsafe_allow_html=True)
-    start_date = st.date_input('Start Date:', date(2019, 1, 1))
-    end_date = st.date_input('End Date:', date(2023, 12, 31))
-    assets = st.text_area('List of Assets (comma-separated)', 'AAPL, IBM, TSLA, GOOG, NVDA')
-    benchmark = st.text_input('Benchmark', '^GSPC')
+    if 'download_data' in st.session_state:
+        start_date = st.session_state.download_data['start_date']
+        end_date = st.session_state.download_data['end_date']
+        assets = st.session_state.download_data['assets']
+        benchmark = st.session_state.download_data['benchmark']
+
+        st.write("Using data from:")
+        st.write(f"**Start Date:** {start_date}")
+        st.write(f"**End Date:** {end_date}")
+        st.write(f"**Assets:** {assets}")
+        st.write(f"**Benchmark:** {benchmark}")
+    else:
+        st.error("Please download data first on the 'Download Data' page.")
+        return  # Salimos de la función si no hay datos descargados
+
+    # Entrada adicional necesaria solo en esta página
     rf_rate = st.number_input('Risk-Free Rate', value=0.065, step=0.001)
     initial_capital = st.number_input('Initial Capital', value=1000000, step=100000)
     method = st.selectbox('Optimization Method', ['MonteCarlo', 'SLSQP', 'Genetic', 'Gradient'])
@@ -110,12 +153,29 @@ def strategies_page():
         "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First",
         "Max Sortino", "Risk Parity", "CVaR", "Max Sharpe FF", "HRP", "Black-Litterman"
 ]
+    strategy_descriptions = {
+    "Max Sharpe": "Optimizes portfolio to maximize the Sharpe ratio.",
+    "Max (Smart) Sharpe": "Maximizes a version of Sharpe ratio adjusted for autocorrelation in returns.",
+    "Max Omega": "Maximizes the Omega ratio, focusing on capturing more gains than losses beyond a threshold.",
+    "Max (Smart) Omega": "Maximizes a version of the Omega ratio adjusted for serial correlation in returns.",
+    "Min VaR (Empirical)": "Minimizes the portfolio's Value at Risk using historical data.",
+    "Min VaR (Parametric)": "Minimizes the portfolio's Value at Risk using a parametric approach.",
+    "Semivariance": "Minimizes the semivariance to reduce the portfolio's downside risk.",
+    "Safety-First": "Aims to minimize the probability that portfolio returns fall below a threshold.",
+    "Max Sortino": "Seeks to maximize the Sortino ratio, focusing on downside deviation.",
+    "Risk Parity": "Aims for equal risk contribution from all portfolio assets.",
+    "CVaR": "Minimizes the Conditional Value at Risk, focusing on worst-case scenario losses.",
+    "Max Sharpe FF": "Maximizes the Sharpe ratio considering Fama-French factor models.",
+    "HRP": "Hierarchical Risk Parity approach to diversify risk.",
+    "Black-Litterman": "Combines market equilibrium and subjective views for portfolio optimization."
+}
+
     
     st.markdown("""
-        <style>
-        .stCheckbox label { font-size: 5px !important; }
-        </style>
-    """, unsafe_allow_html=True)
+    <style>
+    .stCheckbox label { font-size: 16px !important; }
+    </style>
+""", unsafe_allow_html=True)
 
     if 'select_all' not in st.session_state:
         st.session_state['select_all'] = False
@@ -123,17 +183,21 @@ def strategies_page():
     selected_strategies = st.multiselect(
         'Select optimization strategies:',
         strategies,
-        default=strategies if st.session_state['select_all'] else []
+        default=strategies if st.session_state['select_all'] else [],
+        help="Select one or more strategies to view their descriptions below."
     )
 
     if st.checkbox('Select/Deselect All', value=st.session_state['select_all'], on_change=lambda: st.session_state.update({'select_all': not st.session_state['select_all']})):
-        st.session_state['selected_strategies'] = strategies if st.session_state['select_all'] else []
+        if st.session_state['select_all']:
+            selected_strategies = strategies
+        else:
+            selected_strategies = []
 
-    if st.session_state['select_all']:
-        st.session_state['selected_strategies'] = strategies
-    else:
-        st.session_state['selected_strategies'] = selected_strategies
-
+    if selected_strategies:
+        st.write("### Selected Strategy Descriptions:")
+        for strategy in selected_strategies:
+            st.write(f"**{strategy}:** {strategy_descriptions[strategy]}")
+            
     # Fama-French Factors setup if relevant strategies are selected
     ff_factors_expectations = {}
     if any(x in selected_strategies for x in ["Max Sharpe FF"]):
