@@ -4,21 +4,24 @@ import numpy as np
 from datetime import date
 import matplotlib.pyplot as plt
 
-# Custom Styles
 st.markdown("""
     <style>
-    .title { color: #4B1664; font-size: 36px; }
-    .big-font { font-size: 20px; color: #4B1664; }
-    .stButton > button {
+    .title { color: #4B1664; font-size: 36px; text-align: center; }
+    .big-font { font-size: 20px; color: black; text-align: center; }
+    div.stButton > button:first-child {
         color: #ffffff; background-color: #4B1664; border: none;
-        border-radius: 5px; padding: 10px 24px; font-size: 18px; margin: 3px;
+        border-radius: 5px; padding: 10px 24px; font-size: 18px; margin: 3px; width: 100%;
     }
-    .stButton > button:hover { background-color: #FFC8DE; }
+    div.stButton > button:hover { background-color: #FFC8DE; }
     .sidebar .block-container { background-color: #FFC8DE; color: #4B1664; }
-    </style>""", unsafe_allow_html=True)
+    .center { display: flex; justify-content: center; align-items: center; }
+    /* Selector CSS actualizado basado en tu inspección del elemento */
+    .stCheckbox .checkbox label { font-size: 8px !important; } 
+    </style>
+""", unsafe_allow_html=True)
 
 # Display logo at the top of all pages
-st.image("https://www.pilou.io/wp-content/uploads/2023/08/Logo-PILOU-28.png", width=200)
+st.markdown("<div class='center'><img src='https://www.pilou.io/wp-content/uploads/2023/08/Logo-PILOU-28.png' width='200'></div>", unsafe_allow_html=True)
 
 # Page setup
 if 'page' not in st.session_state:
@@ -34,8 +37,8 @@ with col2:
         st.session_state.page = 'Strategies'
 
 def main_page():
-    st.title('Welcome to Backtesting AA Strategies!')
-    st.markdown("This application allows you to analyze, optimize, and perform backtesting of financial portfolios.")
+    st.markdown("<h1 class='title'>Welcome to Backtesting AA Strategies!</h1>", unsafe_allow_html=True)
+    st.markdown("<div class='big-font'>This application allows you to analyze, optimize, and perform backtesting of financial portfolios.</div>", unsafe_allow_html=True)
     
 def process_input_matrix(input_string):
     """Procesa una entrada de string formateada y verifica que sea una matriz válida antes de convertirla a numpy array."""
@@ -55,7 +58,7 @@ def process_input_vector(input_string):
     return np.array(list(map(float, input_string.split(','))))
 
 def strategies_page():
-    st.title('Optimization and Backtesting of Strategies')
+    st.markdown("<h1 class='title'>Optimization and Backtesting of Strategies</h1>", unsafe_allow_html=True)
     start_date = st.date_input('Start Date:', date(2019, 1, 1))
     end_date = st.date_input('End Date:', date(2023, 12, 31))
     assets = st.text_area('List of Assets (comma-separated)', 'AAPL, IBM, TSLA, GOOG, NVDA')
@@ -83,8 +86,30 @@ def strategies_page():
         "Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega",
         "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First",
         "Max Sortino", "Risk Parity", "CVaR", "Max Sharpe FF", "HRP", "Black-Litterman"
-    ]
-    selected_strategies = st.multiselect('Select optimization strategies:', strategies, default=strategies)
+]
+    
+    st.markdown("""
+        <style>
+        .stCheckbox label { font-size: 5px !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    if 'select_all' not in st.session_state:
+        st.session_state['select_all'] = False
+
+    selected_strategies = st.multiselect(
+        'Select optimization strategies:',
+        strategies,
+        default=strategies if st.session_state['select_all'] else []
+    )
+
+    if st.checkbox('Select/Deselect All', value=st.session_state['select_all'], on_change=lambda: st.session_state.update({'select_all': not st.session_state['select_all']})):
+        st.session_state['selected_strategies'] = strategies if st.session_state['select_all'] else []
+
+    if st.session_state['select_all']:
+        st.session_state['selected_strategies'] = strategies
+    else:
+        st.session_state['selected_strategies'] = selected_strategies
 
     # Fama-French Factors setup if relevant strategies are selected
     ff_factors_expectations = {}
@@ -133,8 +158,6 @@ def strategies_page():
         st.header('Optimization Results')
         st.dataframe(results)
 
- 
-            
 
     if st.button('Dynamic Backtest'):
         if start_date and end_date:
@@ -147,16 +170,9 @@ def strategies_page():
             st.header('Backtesting Results')
             backtest.run_backtest()
             fig = backtest.plot_portfolio()  # This now returns a Plotly figure
-            st.plotly_chart(fig, use_container_width=True)  # Display the Plotly figure in Streamlit
+            st.plotly_chart(fig, use_container_width=True)  # Display the Plotly
         else:
             st.error('Please enter both start and end dates to run the backtest.')
-
-     
-
-            # Assuming we have a method to visualize or return results
-            #plot_portfolio(backtest)
-       # else:
-           # st.error('Please enter both start and end dates to run the backtest.')
 
 # Display the corresponding page
 if st.session_state.page == 'Home':
