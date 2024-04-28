@@ -1,6 +1,8 @@
 import streamlit as st
 from AA import DataDownloader, AssetAllocation, DynamicBacktester
 import numpy as np
+from datetime import date
+import matplotlib.pyplot as plt
 
 # Custom Styles
 st.markdown("""
@@ -54,8 +56,8 @@ def process_input_vector(input_string):
 
 def strategies_page():
     st.title('Optimization and Backtesting of Strategies')
-    start_date = st.date_input('Start Date')
-    end_date = st.date_input('End Date')
+    start_date = st.date_input('Start Date:', date(2019, 1, 1))
+    end_date = st.date_input('End Date:', date(2023, 12, 31))
     assets = st.text_area('List of Assets (comma-separated)', 'AAPL, IBM, TSLA, GOOG, NVDA')
     benchmark = st.text_input('Benchmark', '^GSPC')
     rf_rate = st.number_input('Risk-Free Rate', value=0.065, step=0.001)
@@ -86,7 +88,7 @@ def strategies_page():
 
     # Fama-French Factors setup if relevant strategies are selected
     ff_factors_expectations = {}
-    if any(x in selected_strategies for x in ["HRP", "Max Sharpe FF"]):
+    if any(x in selected_strategies for x in ["Max Sharpe FF"]):
         ff_factors_setup = st.expander("Fama-French Factors Setup")
         with ff_factors_setup:
             ff_factors_expectations = {
@@ -131,7 +133,9 @@ def strategies_page():
         st.header('Optimization Results')
         st.dataframe(results)
 
-    # Dynamic Backtest button
+ 
+            
+
     if st.button('Dynamic Backtest'):
         if start_date and end_date:
             assets_list = [asset.strip() for asset in assets.split(',')]
@@ -140,16 +144,22 @@ def strategies_page():
                 end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
                 benchmark=benchmark, initial_capital=initial_capital, strategies=selected_strategies,
                 rf=rf_rate, method=method)
-            backtest.run_backtest()
             st.header('Backtesting Results')
-            # Assuming we have a method to visualize or return results
-            plot_portfolio(backtest)
+            backtest.run_backtest()
+            fig = backtest.plot_portfolio()  # This now returns a Plotly figure
+            st.plotly_chart(fig, use_container_width=True)  # Display the Plotly figure in Streamlit
         else:
             st.error('Please enter both start and end dates to run the backtest.')
+
+     
+
+            # Assuming we have a method to visualize or return results
+            #plot_portfolio(backtest)
+       # else:
+           # st.error('Please enter both start and end dates to run the backtest.')
 
 # Display the corresponding page
 if st.session_state.page == 'Home':
     main_page()
 elif st.session_state.page == 'Strategies':
     strategies_page()
-

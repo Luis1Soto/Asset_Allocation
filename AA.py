@@ -8,8 +8,11 @@ import statsmodels.api as sm
 from scipy.stats import norm
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist, squareform
-import matplotlib.pyplot as pltx
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+import streamlit as st
+import plotly.graph_objects as go
+
 class DataDownloader:
     
     def __init__(self):
@@ -1053,6 +1056,7 @@ class DynamicBacktester:
             
             current_date = next_rebalance_date + timedelta(days=1)
     
+ 
     def plot_portfolio(self):
         """
         Plots the daily values of the portfolio for each strategy over the course of the backtest.
@@ -1061,8 +1065,19 @@ class DynamicBacktester:
         """
         max_length = max(len(values) for values in self.daily_values.values())
         dates = pd.date_range(start=self.start_date, periods=max_length, freq='D')
-        plt.figure(figsize=(14, 8))
+
+        fig = go.Figure()
+
         for strategy, values in self.daily_values.items():
             if len(values) < max_length:
-                values += [np.nan] * (max_length - len(values))
-            plt.plot(dates)
+                values = list(values) + [None] * (max_length - len(values))
+            fig.add_trace(go.Scatter(x=dates, y=values, mode='lines', name=strategy))
+
+        fig.update_layout(
+            title='Backtest Results',
+            xaxis_title='Date',
+            yaxis_title='Portfolio Value',
+            legend_title='Strategy'
+        )
+        return fig
+
