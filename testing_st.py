@@ -3,6 +3,7 @@ from AA import DataDownloader, AssetAllocation, DynamicBacktester
 import numpy as np
 from datetime import date
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 st.markdown("""
     <style>
@@ -28,11 +29,14 @@ if 'page' not in st.session_state:
     st.session_state.page = 'Home'
 
 # Navigation buttons
-col1, col2 = st.columns([1, 1])
+col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     if st.button("Home"):
         st.session_state.page = 'Home'
 with col2:
+    if st.button("Download Data"):
+        st.session_state.page = 'Download Data'
+with col3:
     if st.button("Strategies"):
         st.session_state.page = 'Strategies'
 
@@ -52,6 +56,25 @@ def process_input_matrix(input_string):
         st.error(f"Error al procesar la matriz: {str(e)}")
         return None
     
+def download_data_page():
+    st.markdown("<h1 class='title'>Download and Visualize Financial Data</h1>", unsafe_allow_html=True)
+    start_date = st.date_input('Start Date:', date(2019, 1, 1))
+    end_date = st.date_input('End Date:', date(2023, 12, 31))
+    assets = st.text_area('List of Assets (comma-separated)', 'AAPL, IBM, TSLA, GOOG, NVDA')
+    benchmark = st.text_input('Benchmark', '^GSPC')
+
+    if st.button('Download and Plot Data'):
+        assets_list = [asset.strip() for asset in assets.split(',')]
+        downloader = DataDownloader()
+        asset_prices, benchmark_prices, _ = downloader.download_data(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), assets_list, benchmark)
+        
+        # Create plot using Plotly
+        fig = go.Figure()
+        for asset in assets_list:
+            fig.add_trace(go.Scatter(x=asset_prices.index, y=asset_prices[asset], mode='lines', name=asset))
+        fig.add_trace(go.Scatter(x=benchmark_prices.index, y=benchmark_prices[benchmark], mode='lines', name=benchmark, line=dict(color='black', width=4)))
+        fig.update_layout(title='Asset Prices and Benchmark', xaxis_title='Date', yaxis_title='Price', legend_title='Legend')
+        st.plotly_chart(fig, use_container_width=True)
     
 def process_input_vector(input_string):
     """Procesa una entrada de string formateada y devuelve un vector numpy."""
@@ -177,5 +200,8 @@ def strategies_page():
 # Display the corresponding page
 if st.session_state.page == 'Home':
     main_page()
+elif st.session_state.page == 'Download Data':
+    download_data_page()
+
 elif st.session_state.page == 'Strategies':
     strategies_page()
