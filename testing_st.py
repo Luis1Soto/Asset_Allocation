@@ -293,21 +293,35 @@ def strategies_page():
         if Omega is None:  # Verificar si Omega es cuadrada
             return  # Detener ejecución si hay un error
         
-# Dynamic Backtest button
-    if st.button('Dynamic Backtest'):
-        if start_date and end_date:
-            assets_list = [asset.strip() for asset in assets.split(',')]
-            backtest = DynamicBacktester(
-                start_date=start_date.strftime('%Y-%m-%d'),
-                end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
-                benchmark=benchmark, initial_capital=initial_capital, strategies=selected_strategies,
-                rf=rf_rate, method=method)
-            st.header('Backtesting Results')
-            backtest.run_backtest()
-            fig = backtest.plot_portfolio()  # This now returns a Plotly figure
-            st.plotly_chart(fig, use_container_width=True)  # Display the Plotly figure in Streamlit
-        else:
-            st.error('Please enter both start and end dates to run the backtest.')
+    # Botón Dynamic Backtest modificado
+    #if st.button('Dynamic Backtest'):
+     #   st.session_state.page = 'Backtesting'
+
+# Definir el contenido de la página Backtesting
+def backtesting_page():
+    if 'start_date' in st.session_state and 'end_date' in st.session_state:
+        start_date = st.session_state.start_date
+        end_date = st.session_state.end_date
+        assets = st.session_state.download_data['assets']
+        benchmark = st.session_state.download_data['benchmark']
+        initial_capital = st.session_state.download_data.get('initial_capital', 1000000)
+        strategies = st.session_state.get('selected_strategies', [])
+        rf_rate = st.session_state.download_data.get('rf_rate', 0.065)
+        method = st.session_state.download_data.get('method', 'MonteCarlo')
+
+        assets_list = [asset.strip() for asset in assets.split(',')]
+        backtest = DynamicBacktester(
+            start_date=start_date.strftime('%Y-%m-%d'),
+            end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
+            benchmark=benchmark, initial_capital=initial_capital, strategies=strategies,
+            rf=rf_rate, method=method)
+        
+        st.header('Backtesting Results')
+        backtest.run_backtest()
+        fig = backtest.plot_portfolio()  # This now returns a Plotly figure
+        st.plotly_chart(fig, use_container_width=True)  # Display the Plotly figure in Streamlit
+    else:
+        st.error('Please enter both start and end dates to run the backtest.')
 
 # Display the corresponding page
 if st.session_state.page == 'Home':
