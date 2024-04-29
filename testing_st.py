@@ -224,6 +224,10 @@ def strategies_page():
     progress_bar = st.progress(0)
     if st.button('Optimize Strategies'):
         progress_text.text('0%')
+        st.session_state['rf_rate'] = rf_rate
+        st.session_state['initial_capital'] = initial_capital
+        st.session_state['selected_strategies'] = selected_strategies
+        st.session_state['method'] = method
         
         
         
@@ -313,29 +317,30 @@ def strategies_page():
         st.session_state.page = 'Backtesting'
 
 def backtesting_page():
-    if 'start_date' in st.session_state and 'end_date' in st.session_state:
-        start_date = st.session_state.start_date
-        end_date = st.session_state.end_date
+    if 'selected_strategies' in st.session_state and 'start_date' in st.session_state and 'end_date' in st.session_state:
+        rf_rate = st.session_state.get('rf_rate', 0.065)
+        initial_capital = st.session_state.get('initial_capital', 1000000)
+        selected_strategies = st.session_state.get('selected_strategies', [])
+        method = st.session_state.get('method', 'MonteCarlo')
+
         assets = st.session_state.download_data['assets']
         benchmark = st.session_state.download_data['benchmark']
-        initial_capital = st.session_state.download_data.get('initial_capital', 1000000)
-        strategies = st.session_state.get('selected_strategies', [])
-        rf_rate = st.session_state.download_data.get('rf_rate', 0.065)
-        method = st.session_state.download_data.get('method', 'MonteCarlo')
+        start_date = st.session_state.download_data['start_date']
+        end_date = st.session_state.download_data['end_date']
 
         assets_list = [asset.strip() for asset in assets.split(',')]
         backtest = DynamicBacktester(
             start_date=start_date.strftime('%Y-%m-%d'),
             end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
-            benchmark=benchmark, initial_capital=initial_capital, strategies=strategies,
+            benchmark=benchmark, initial_capital=initial_capital, strategies=selected_strategies,
             rf=rf_rate, method=method)
         
         st.header('Backtesting Results')
         backtest.run_backtest()
-        fig = backtest.plot_portfolio()  # This now returns a Plotly figure
-        st.plotly_chart(fig, use_container_width=True)  # Display the Plotly figure in Streamlit
+        fig = backtest.plot_portfolio()
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.error('Please enter both start and end dates to run the backtest.')
+        st.error('Please ensure all required fields are filled on the "Strategies" page before running the backtest.')
 # Display the corresponding page
 if st.session_state.page == 'Home':
     main_page()
