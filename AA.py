@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import streamlit as st
 import plotly.graph_objects as go
+import copy
+
 
 class DataDownloader:
     
@@ -178,7 +180,7 @@ class HierarchicalRiskParity:
         
         return self.weights
 
-    
+
 class AssetAllocation:
     
     def __init__(self, asset_prices, benchmark_prices, rf, ff_factors_expectations=None, ff_factors=None, bounds=None, RMT_filtering=False):
@@ -1043,7 +1045,7 @@ class DynamicBacktester:
                 ff_factors_expectations=self.ff_factors_expectations,
                 RMT_filtering=True
             )
-            optimized_portfolios = asset_allocation.Optimize_Portfolio(self.strategies, method=self.method)
+            optimized_portfolios = asset_allocation.Optimize_Portfolio(copy.copy(self.strategies), method=self.method)
 
             for strategy in self.strategies:
                 weights = optimized_portfolios.loc[strategy, self.assets]

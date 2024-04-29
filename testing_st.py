@@ -47,18 +47,7 @@ def main_page():
     st.markdown("<h1 class='title'>Welcome to Backtesting AA Strategies!</h1>", unsafe_allow_html=True)
     st.markdown("<div class='big-font'>This application allows you to analyze, optimize, and perform backtesting of financial portfolios.</div>", unsafe_allow_html=True)
     
-def process_input_matrix(input_string):
-    """Procesa una entrada de string formateada y verifica que sea una matriz válida antes de convertirla a numpy array."""
-    try:
-        row_lists = [list(map(float, row.split(','))) for row in input_string.strip().split(';')]
-        if not all(len(row) == len(row_lists) for row in row_lists):
-            st.error("Error: La matriz Omega debe ser cuadrada y todas las filas deben tener la misma cantidad de elementos.")
-            return None
-        return np.array(row_lists)
-    except Exception as e:
-        st.error(f"Error al procesar la matriz: {str(e)}")
-        return None
-    
+
 def download_data_page():
     st.markdown("<h1 class='title'>Download and Visualize Financial Data</h1>", unsafe_allow_html=True)
     if 'download_data' not in st.session_state:
@@ -226,6 +215,8 @@ def strategies_page():
         progress_text.text('0%')
         st.session_state['rf_rate'] = rf_rate
         st.session_state['initial_capital'] = initial_capital
+        print("##############################################################################")
+        print("Saving strategies", selected_strategies)
         st.session_state['selected_strategies'] = selected_strategies
         st.session_state['method'] = method
         
@@ -335,6 +326,10 @@ def backtesting_page():
         assets_list = [asset.strip() for asset in assets.split(',')]
         progress_bar.progress(25)  # Avanzamos al 25%
         progress_text.text('⏳ 25%')
+
+        print("################################################################################################")
+        print(st.session_state)
+
         backtest = DynamicBacktester(
             start_date=start_date.strftime('%Y-%m-%d'),
             end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
