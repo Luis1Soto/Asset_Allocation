@@ -218,17 +218,23 @@ def strategies_page():
         st.write("### Selected Strategy Descriptions:")
         for strategy in selected_strategies:
             st.write(f"**{strategy}:** {strategy_descriptions[strategy]}")
-    
+    progress_text = st.empty()
+    progress_bar = st.progress(0)
     if st.button('Optimize Strategies'):
+        progress_text.text('0%')
         assets_list = [asset.strip() for asset in assets.split(',')]
         downloader = DataDownloader()
         asset_prices, benchmark_prices, ff_factors = downloader.download_data(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), assets_list, benchmark)
+        progress_bar.progress(20)
+        progress_text.text('⏳ 20%')
         asset_allocation = AssetAllocation(asset_prices, benchmark_prices, rf_rate, ff_factors=ff_factors)
 
         if "Black-Litterman" in selected_strategies:
             asset_allocation.set_blacklitterman_expectations(P, Q, tau, Omega)
 
         results = asset_allocation.Optimize_Portfolio(selected_strategies, method=method)
+        progress_bar.progress(60)
+        progress_text.text('⏳ 60%')
 
         st.header('Optimization Results')
         # Aplicamos formato al dataframe antes de mostrarlo
@@ -252,6 +258,8 @@ def strategies_page():
             if not weights.empty:
                 fig = plot_pie_chart(weights, strategy)
                 st.plotly_chart(fig, use_container_width=True)
+        progress_bar.progress(80)
+        progress_text.text('⏳ 80%')
 
             
                   
@@ -267,7 +275,10 @@ def strategies_page():
                 'RF': st.number_input('Risk-Free Rate (RF)', value=0.02, step=0.01)
             }
     
-    
+    progress_bar.progress(100)
+    progress_text.text('100% ⌛️')
+    progress_bar.empty()
+    progress_text.empty()
             
             
     def process_input_matrix(input_string):
