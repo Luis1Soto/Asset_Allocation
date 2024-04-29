@@ -229,8 +229,6 @@ def strategies_page():
             asset_allocation.set_blacklitterman_expectations(P, Q, tau, Omega)
 
         results = asset_allocation.Optimize_Portfolio(selected_strategies, method=method)
-        st.session_state.optimized_weights = results.drop(columns=['Optimized Value'])  
-        st.session_state.selected_strategies = selected_strategies  # Guarda las estrategias seleccionada
 
         st.header('Optimization Results')
         # Aplicamos formato al dataframe antes de mostrarlo
@@ -248,9 +246,10 @@ def strategies_page():
         }])
         st.dataframe(formatted_results)
 
-        for strategy in selected_strategies:
-            if strategy in results.index:
-                weights = results.loc[strategy, results.columns != 'Optimized Value']  # Excluir la columna de valores optimizados
+        # Plot para cada estrategia, incluyendo HRP si está presente
+        for strategy in results.index:
+            weights = results.loc[strategy, results.columns != 'Optimized Value']  # Excluir la columna de valores optimizados
+            if not weights.empty:
                 fig = plot_pie_chart(weights, strategy)
                 st.plotly_chart(fig, use_container_width=True)
 

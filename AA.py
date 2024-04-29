@@ -930,47 +930,52 @@ class AssetAllocation:
             "Max Sortino": (self.neg_sortino_ratio, False),
             "Risk Parity": (self.neg_risk_parity_ratio, False),
             "CVaR": (self.cvar, False),
-            "Max Sharpe FF": (self.neg_sharpe_ratio_ff, False),
-            "HRP": (self.calculate_hrp_weights, None)  # Si es necesario manejar de forma especial
+            "Max Sharpe FF": (self.neg_sharpe_ratio_ff, False)
         }
 
         if self.bl_expectations_set:
             all_strategies["Black-Litterman"] = (self.neg_BL_returns, False)
+
+        # Excluir HRP de este flujo principal y manejarlo por separado si está seleccionado
+        if "HRP" in selected_strategies:
+            hrp_selected = True
+            selected_strategies.remove("HRP")
+        else:
+            hrp_selected = False
 
         # Filtrar solo las estrategias seleccionadas
         optimizations = [(func, is_smart) for name, (func, is_smart) in all_strategies.items() if name in selected_strategies]
 
         optimized_weights = []
         optimized_values = []
-        optimization_names = selected_strategies  # Usar solo las estrategias seleccionadas
+        optimization_names = selected_strategies
 
         optimize_function = getattr(self, f"optimize_{method}", None)
         if not optimize_function:
             raise ValueError(f"Optimization method '{method}' not recognized.")
 
-        for i, (objective_function, is_smart) in enumerate(optimizations):
+        for func, is_smart in optimizations:
             weights, value = self.optimize_generic(
                 optimize_function,
-                objective_function,
+                func,
                 is_smart=is_smart,
                 **kwargs
             )
-            if optimization_names[i] in ["Min VaR (Empirical)", "Min VaR (Parametric)"]:
-                value *= -1  # Ajustar el valor si es necesario
             optimized_weights.append(weights)
             optimized_values.append(value)
 
+        # Preparar el DataFrame con los resultados
         results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=self.asset_prices.columns)
         results_df['Optimized Value'] = optimized_values
 
-        # HRP si es seleccionado
-        if "HRP" in selected_strategies:
+        # Agregar los resultados de HRP si fue seleccionado
+        if hrp_selected:
             hrp_weights = self.calculate_hrp_weights()
-            hrp_weights['Optimized Value'] = np.nan  # Asumiendo que es un resultado único
-            results_df.loc['HRP'] = hrp_weights
+            hrp_df = pd.Series(hrp_weights, name='HRP')
+            hrp_df['Optimized Value'] = np.nan  # Asumiendo que es un resultado único
+            results_df = pd.concat([results_df, pd.DataFrame([hrp_df])])
 
         return results_df
-
 
     
 class DynamicBacktester:
