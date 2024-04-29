@@ -153,7 +153,7 @@ def strategies_page():
     rf_rate = st.number_input('Risk-Free Rate', value=0.065, step=0.001)
     initial_capital = st.number_input('Initial Capital', value=1000000, step=100000)
     method = st.selectbox('Optimization Method', ['MonteCarlo', 'SLSQP', 'Genetic', 'Gradient'])
-
+    
     # Optimization parameters based on method
     params = {}
     if method == 'MonteCarlo':
@@ -214,6 +214,8 @@ def strategies_page():
         else:
             selected_strategies = []
 
+            
+            
     if selected_strategies:
         st.write("### Selected Strategy Descriptions:")
         for strategy in selected_strategies:
@@ -222,6 +224,9 @@ def strategies_page():
     progress_bar = st.progress(0)
     if st.button('Optimize Strategies'):
         progress_text.text('0%')
+        
+        
+        
         assets_list = [asset.strip() for asset in assets.split(',')]
         downloader = DataDownloader()
         asset_prices, benchmark_prices, ff_factors = downloader.download_data(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), assets_list, benchmark)
@@ -305,9 +310,8 @@ def strategies_page():
         
     # Botón Dynamic Backtest modificado
     #if st.button('Dynamic Backtest'):
-     #   st.session_state.page = 'Backtesting'
+        st.session_state.page = 'Backtesting'
 
-# Definir el contenido de la página Backtesting
 def backtesting_page():
     if 'start_date' in st.session_state and 'end_date' in st.session_state:
         start_date = st.session_state.start_date
@@ -332,7 +336,6 @@ def backtesting_page():
         st.plotly_chart(fig, use_container_width=True)  # Display the Plotly figure in Streamlit
     else:
         st.error('Please enter both start and end dates to run the backtest.')
-
 # Display the corresponding page
 if st.session_state.page == 'Home':
     main_page()

@@ -1066,15 +1066,21 @@ class DynamicBacktester:
 
         This method generates a line plot displaying the growth of the portfolio value over time for each strategy, aiding in visual comparison of strategy performance.
         """
-        max_length = max(len(values) for values in self.daily_values.values())
+
+        if not any(self.daily_values.values()):
+            st.error("No data available to plot. Please run the backtest first.")
+            return go.Figure()  # Retorna una figura vacía o maneja la situación de alguna otra manera
+
+        max_length = max(len(values) for values in self.daily_values.values() if values)
         dates = pd.date_range(start=self.start_date, periods=max_length, freq='D')
 
         fig = go.Figure()
 
         for strategy, values in self.daily_values.items():
-            if len(values) < max_length:
-                values = list(values) + [None] * (max_length - len(values))
-            fig.add_trace(go.Scatter(x=dates, y=values, mode='lines', name=strategy))
+            if values:  # Solo añadir trazas para estrategias con datos
+                if len(values) < max_length:
+                    values = list(values) + [None] * (max_length - len(values))
+                fig.add_trace(go.Scatter(x=dates, y=values, mode='lines', name=strategy))
 
         fig.update_layout(
             title='Backtest Results',
@@ -1083,4 +1089,3 @@ class DynamicBacktester:
             legend_title='Strategy'
         )
         return fig
-
