@@ -322,23 +322,34 @@ def backtesting_page():
         initial_capital = st.session_state.get('initial_capital', 1000000)
         selected_strategies = st.session_state.get('selected_strategies', [])
         method = st.session_state.get('method', 'MonteCarlo')
-
+        
         assets = st.session_state.download_data['assets']
         benchmark = st.session_state.download_data['benchmark']
         start_date = st.session_state.download_data['start_date']
         end_date = st.session_state.download_data['end_date']
-
+        
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
+        progress_text.text('0%')
+        
         assets_list = [asset.strip() for asset in assets.split(',')]
+        progress_bar.progress(25)  # Avanzamos al 25%
+        progress_text.text('⏳ 25%')
         backtest = DynamicBacktester(
             start_date=start_date.strftime('%Y-%m-%d'),
             end_date=end_date.strftime('%Y-%m-%d'), assets=assets_list,
             benchmark=benchmark, initial_capital=initial_capital, strategies=selected_strategies,
             rf=rf_rate, method=method)
-        
+        progress_bar.progress(50)  # Avanzamos al 25%
+        progress_text.text('⏳ 50%')
         st.header('Backtesting Results')
         backtest.run_backtest()
         fig = backtest.plot_portfolio()
         st.plotly_chart(fig, use_container_width=True)
+        progress_bar.progress(100)
+        progress_text.text('100% ⌛️')
+        progress_bar.empty()
+        progress_text.empty()
     else:
         st.error('Please ensure all required fields are filled on the "Strategies" page before running the backtest.')
 # Display the corresponding page
