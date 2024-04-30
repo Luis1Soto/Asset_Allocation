@@ -21,7 +21,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Display logo at the top of all pages
+
 st.markdown("<div class='center'><img src='https://www.pilou.io/wp-content/uploads/2023/08/Logo-PILOU-28.png' width='200'></div>", unsafe_allow_html=True)
 
 # Page setup
@@ -160,22 +160,27 @@ def strategies_page():
     # Strategy selection
     strategies = [
         "Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega",
-        "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance", "Safety-First",
-        "Max Sortino", "Risk Parity", "CVaR", "Max Sharpe FF", "HRP", "Black-Litterman"
+        "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance",
+        "Semivariance (Smart)", "Safety-First","Safety-First (Smart)",
+        "Max Sortino","Max Sortino (Smart)", "Risk Parity", "CVaR", "Max Sharpe FF","Max Sharpe FF (Smart)", "HRP", "Black-Litterman"
 ]
     strategy_descriptions = {
     "Max Sharpe": "Optimizes portfolio to maximize the Sharpe ratio.",
-    "Max (Smart) Sharpe": "Maximizes a version of Sharpe ratio adjusted for autocorrelation in returns.",
+    "Max (Smart) Sharpe": "Maximizes a version of Sharpe ratio penalizing autocorrelation in the portfolio.",
     "Max Omega": "Maximizes the Omega ratio, focusing on capturing more gains than losses beyond a threshold.",
     "Max (Smart) Omega": "Maximizes a version of the Omega ratio adjusted for serial correlation in returns.",
     "Min VaR (Empirical)": "Minimizes the portfolio's Value at Risk using historical data.",
     "Min VaR (Parametric)": "Minimizes the portfolio's Value at Risk using a parametric approach.",
     "Semivariance": "Minimizes the semivariance to reduce the portfolio's downside risk.",
+    "Semivariance (Smart)": "Minimizes the semivariance to reduce the portfolio's downside risk and penalizing autocorrelation in the portfolio.",
     "Safety-First": "Aims to minimize the probability that portfolio returns fall below a threshold.",
+    "Safety-First (Smart)": "Aims to minimize the probability that portfolio returns fall below a threshold and penalizes autocorrelation in the portfolio.",
     "Max Sortino": "Seeks to maximize the Sortino ratio, focusing on downside deviation.",
+    "Max Sortino (Smart)": "Seeks to maximize the Sortino ratio, focusing on downside deviation and penalizing autocorrelation in the portfolio.",,
     "Risk Parity": "Aims for equal risk contribution from all portfolio assets.",
     "CVaR": "Minimizes the Conditional Value at Risk, focusing on worst-case scenario losses.",
     "Max Sharpe FF": "Maximizes the Sharpe ratio considering Fama-French factor models.",
+    "Max Sharpe FF (Smart)": "Maximizes the Sharpe ratio considering Fama-French factor models and penalizing autocorrelation in the portfolio.",
     "HRP": "Hierarchical Risk Parity approach to diversify risk.",
     "Black-Litterman": "Combines market equilibrium and subjective views for portfolio optimization."
 }
