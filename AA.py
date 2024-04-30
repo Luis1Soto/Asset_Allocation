@@ -928,12 +928,17 @@ class AssetAllocation:
             "Min VaR (Empirical)": (self.portfolio_var, True),
             "Min VaR (Parametric)": (self.portfolio_var, False),
             "Semivariance": (self.semivariance_ratio, False),
+            "Semivariance (Smart)": (self.semivariance_ratio, True),
             "Safety-First": (self.neg_safety_first_ratio, False),
+            "Safety-First (Smart)": (self.neg_safety_first_ratio, True),
             "Max Sortino": (self.neg_sortino_ratio, False),
+            "Max Sortino (Smart)": (self.neg_sortino_ratio, True),
             "Risk Parity": (self.neg_risk_parity_ratio, False),
             "CVaR": (self.cvar, False),
-            "Max Sharpe FF": (self.neg_sharpe_ratio_ff, False)
+            "Max Sharpe FF": (self.neg_sharpe_ratio_ff, False),
+            "Max Sharpe FF (Smart)": (self.neg_sharpe_ratio_ff, True)
         }
+
 
         if self.bl_expectations_set:
             all_strategies["Black-Litterman"] = (self.neg_BL_returns, False)
