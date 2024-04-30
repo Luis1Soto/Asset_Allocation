@@ -976,6 +976,7 @@ class AssetAllocation:
             hrp_df = pd.Series(hrp_weights, name='HRP')
             hrp_df['Optimized Value'] = np.nan  # Asumiendo que es un resultado único
             results_df = pd.concat([results_df, pd.DataFrame([hrp_df])])
+            selected_strategies.append("HRP")
 
         return results_df
 
