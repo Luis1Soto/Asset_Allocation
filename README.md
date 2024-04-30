@@ -49,8 +49,10 @@ For each class and method in this package, you can find a detailed explanation i
 
 ## Authors
 
-- ULISES RODRIGO LEON ORTIZ
-- PAULINA RAQUEL MONROY SALCIDO
-- LUIS RAMON ROBLES COBIAN
-- LUIS EDUARDO SANCHEZ SOTO
-- OSCAR LEONARDO VACA GONZALEZ
+- LUIS EDUARDO SANCHEZ SOTO (eduardo.sanchez@iteso.mx)
+- LUIS RAMON ROBLES COBIAN (luis.robles@iteso.mx)
+- OSCAR LEONARDO VACA GONZALEZ (oscar.vaca@iteso.mx)
+- PAULINA RAQUEL MONROY SALCIDO (paulina.monroy@iteso.mx)
+- ULISES RODRIGO LEON ORTIZ (if728580@iteso.mx)
+
+
