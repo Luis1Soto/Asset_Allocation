@@ -44,9 +44,27 @@ with col4:
         st.session_state.page = 'Backtesting'
 
 def main_page():
-    st.markdown("<h1 class='title'>Welcome to Backtesting AA Strategies!</h1>", unsafe_allow_html=True)
-    st.markdown("<div class='big-font'>This application allows you to analyze, optimize, and perform backtesting of financial portfolios.</div>", unsafe_allow_html=True)
+    # Título de la página
+    st.markdown("<h1 style='text-align: left;'>Welcome to Backtesting AA Strategies!</h1>", unsafe_allow_html=True)
     
+    # División en columnas
+    col1, col2 = st.columns([3, 2])  # Ajusta los tamaños relativos si es necesario
+
+    # Columna de texto
+    with col1:
+        st.markdown("""
+            <div style='text-align: left;'>
+                This dashboard is designed for researching, implementing, and backtesting quantitative asset allocation strategies.
+                It offers tools for strategy selection, including Variance Minimization, Sharpe Ratio Maximization, and Hierarchical Risk Parity (HRP),
+                built on transparent, object-oriented programming. Users can conduct thorough backtests with historical data and utilize an interactive interface
+                to explore and compare investment strategies, enhancing decision-making in asset allocation.
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Columna de imagen
+    with col2:
+        st.image("https://i.pinimg.com/originals/94/15/cf/9415cf8ab9ab36db1f0694215ffa4ff6.jpg", width=400)  # Ajusta este 
+
 
 def download_data_page():
     st.markdown("<h1 class='title'>Download and Visualize Financial Data</h1>", unsafe_allow_html=True)
@@ -176,7 +194,7 @@ def strategies_page():
     "Safety-First": "Aims to minimize the probability that portfolio returns fall below a threshold.",
     "Safety-First (Smart)": "Aims to minimize the probability that portfolio returns fall below a threshold and penalizes autocorrelation in the portfolio.",
     "Max Sortino": "Seeks to maximize the Sortino ratio, focusing on downside deviation.",
-    "Max Sortino (Smart)": "Seeks to maximize the Sortino ratio, focusing on downside deviation and penalizing autocorrelation in the portfolio.",,
+    "Max Sortino (Smart)": "Seeks to maximize the Sortino ratio, focusing on downside deviation and penalizing autocorrelation in the portfolio.",
     "Risk Parity": "Aims for equal risk contribution from all portfolio assets.",
     "CVaR": "Minimizes the Conditional Value at Risk, focusing on worst-case scenario losses.",
     "Max Sharpe FF": "Maximizes the Sharpe ratio considering Fama-French factor models.",
