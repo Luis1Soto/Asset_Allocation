@@ -63,7 +63,7 @@ def main_page():
 
     # Columna de imagen
     with col2:
-        st.image("https://i.pinimg.com/originals/94/15/cf/9415cf8ab9ab36db1f0694215ffa4ff6.jpg", width=400)  # Ajusta este 
+        st.image("https://i.pinimg.com/originals/94/15/cf/9415cf8ab9ab36db1f0694215ffa4ff6.jpg", width=600)  # Ajusta este 
 
 
 def download_data_page():
@@ -180,7 +180,7 @@ def strategies_page():
         "Max Sharpe", "Max (Smart) Sharpe", "Max Omega", "Max (Smart) Omega",
         "Min VaR (Empirical)", "Min VaR (Parametric)", "Semivariance",
         "Semivariance (Smart)", "Safety-First","Safety-First (Smart)",
-        "Max Sortino","Max Sortino (Smart)", "Risk Parity", "CVaR", "Max Sharpe FF","Max Sharpe FF (Smart)", "HRP", "Black-Litterman"
+        "Max Sortino","Max Sortino (Smart)", "Risk Parity", "CVaR", "Max Sharpe FF","Max Sharpe FF (Smart)", "HRP"
 ]
     strategy_descriptions = {
     "Max Sharpe": "Optimizes portfolio to maximize the Sharpe ratio.",

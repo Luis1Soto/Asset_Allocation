@@ -616,7 +616,10 @@ class AssetAllocation:
         :param weights: Weights of the assets in the portfolio.
         :return: Autocorrelation penalty for the portfolio returns.
         """
+        # Calculate portfolio returns based on weights and asset returns
         portfolio_returns = np.dot(self.asset_returns, weights)
+
+        # Calculate the autocorrelation coefficient for the portfolio returns
         num = len(portfolio_returns)
         coef = np.abs(np.corrcoef(portfolio_returns[:-1], portfolio_returns[1:])[0, 1])
         corr = [((num - x) / num) * coef**x for x in range(1, num)]
@@ -641,27 +644,30 @@ class AssetAllocation:
             daily_volatility *= autocorr_penalty
     
         annual_volatility = daily_volatility * np.sqrt(trading_days)
+    
+        # Calcula el exceso de retorno diario del portafolio y luego anualízalo
         daily_excess_return = np.dot(weights, self.average_asset_returns) - self.rf_daily
         annual_excess_return = daily_excess_return * trading_days
+    
+        # Calcula el ratio de Sharpe anualizado
         annual_sharpe_ratio = annual_excess_return / annual_volatility
     
         return -annual_sharpe_ratio
     
     
-    def neg_sharpe_ratio_ff(self, weights,Smart = False, *args):
+    def neg_sharpe_ratio_ff(self, weights, *args):
         if self.ff_expected_returns is None or self.ff_expected_returns.empty:
             return float('inf')
+    
         trading_days = 252
+    
         daily_excess_return = np.dot(weights, self.ff_expected_returns) - self.rf_daily
         annual_excess_return = daily_excess_return * trading_days
     
         daily_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
         annual_volatility = daily_volatility * np.sqrt(trading_days)
-        if Smart:
-            autocorr_penalty = self.portfolio_autocorr_penalty(weights)
-            annual_sharpe_ratio_ff = annual_excess_return / (annual_volatility * autocorr_penalty)
-        else:
-            annual_sharpe_ratio_ff = annual_excess_return / annual_volatility
+    
+        annual_sharpe_ratio_ff = annual_excess_return / annual_volatility
     
         return -annual_sharpe_ratio_ff
     
@@ -712,43 +718,34 @@ class AssetAllocation:
                
         return VaR 
 
-    def semivariance_ratio(self, weights, Smart=False, *args):
+    def semivariance_ratio(self, weights, *args):
         """
         Returns the semivariance ratio for optimization purposes.
         :param weights: Weights of the assets in the portfolio.
         :return: Semivariance ratio of the portfolio.
         """
-        if Smart== False:
-            
-            semivariance = np.dot(weights, np.dot(self.asset_cov_matrix, weights))
-            
-        else:
-            autocorr_penalty = self.portfolio_autocorr_penalty(weights)
-            semivariance = np.dot(weights, np.dot(self.asset_cov_matrix, weights)) / autocorr_penalty
+
+        semivariance = np.dot(weights, np.dot(self.asset_cov_matrix, weights))
 
         return semivariance
 
     
-    def neg_safety_first_ratio(self, weights,Smart = False, *args):
+    def neg_safety_first_ratio(self, weights, *args):
         """
         Calculates the negative Roy's Safety First Ratio (SFratio) for a given set of asset weights.
 
         :param weights: Weights of the assets in the portfolio.
         :return: Negative SFratio.
         """
-        MAR = self.rf_daily  
+        MAR = self.rf_daily  # Ejemplo de retorno mínimo aceptable
         portfolio_return = np.dot(weights, self.average_asset_returns)
         portfolio_volatility = self.portfolio_volatility(weights, self.asset_cov_matrix)
         
-        if Smart==True:
-            autocorr_penalty = self.portfolio_autocorr_penalty(weights)
-            sf_ratio = (portfolio_return - MAR) / (portfolio_volatility * autocorr_penalty)
-        else:
-            sf_ratio = (portfolio_return - MAR) / portfolio_volatility
+        sf_ratio = (portfolio_return - MAR) / portfolio_volatility
         
         return -sf_ratio
     
-    def neg_sortino_ratio(self, weights, Smart = False, *args):
+    def neg_sortino_ratio(self, weights, *args):
         """  
         Calculate the negative Sortino ratio of a portfolio, focusing on downside risk relative to the risk-free rate. The Sortino ratio is 
         a modification of the Sharpe ratio that distinguishes between harmful volatility and total volatility by using the portfolio's 
@@ -783,10 +780,9 @@ class AssetAllocation:
         negative_excess_returns = excess_returns[excess_returns < 0]
         weighted_negative_excess_returns = negative_excess_returns.multiply(weights, axis=1)
         semivariance = np.mean(np.square(weighted_negative_excess_returns.sum(axis=1)))
-        autocorr_penalty = self.portfolio_autocorr_penalty(weights)
-        if Smart==True:
-            semivariance = semivariance/autocorr_penalty 
-        sortino_ratio = (portfolio_return - self.rf_daily) / np.sqrt(semivariance) 
+
+        sortino_ratio = (portfolio_return - self.rf_daily) / np.sqrt(semivariance)
+        
         return -sortino_ratio
     
     
@@ -923,6 +919,7 @@ class AssetAllocation:
     
     
     def Optimize_Portfolio(self, selected_strategies, method="MonteCarlo", **kwargs):
+        # Listado de todas las posibles estrategias y sus correspondientes funciones y banderas
         all_strategies = {
             "Max Sharpe": (self.neg_sharpe_ratio, False),
             "Max (Smart) Sharpe": (self.neg_sharpe_ratio, True),
@@ -931,26 +928,24 @@ class AssetAllocation:
             "Min VaR (Empirical)": (self.portfolio_var, True),
             "Min VaR (Parametric)": (self.portfolio_var, False),
             "Semivariance": (self.semivariance_ratio, False),
-            "Semivariance (Smart)": (self.semivariance_ratio, True),
             "Safety-First": (self.neg_safety_first_ratio, False),
-            "Safety-First (Smart)": (self.neg_safety_first_ratio, True),
             "Max Sortino": (self.neg_sortino_ratio, False),
-            "Max Sortino (Smart)": (self.neg_sortino_ratio, True),
             "Risk Parity": (self.neg_risk_parity_ratio, False),
             "CVaR": (self.cvar, False),
-            "Max Sharpe FF": (self.neg_sharpe_ratio_ff, False),
-            "Max Sharpe FF (Smart)": (self.neg_sharpe_ratio_ff, True)
+            "Max Sharpe FF": (self.neg_sharpe_ratio_ff, False)
         }
 
         if self.bl_expectations_set:
             all_strategies["Black-Litterman"] = (self.neg_BL_returns, False)
 
+        # Excluir HRP de este flujo principal y manejarlo por separado si está seleccionado
         if "HRP" in selected_strategies:
             hrp_selected = True
             selected_strategies.remove("HRP")
         else:
             hrp_selected = False
 
+        # Filtrar solo las estrategias seleccionadas
         optimizations = [(func, is_smart) for name, (func, is_smart) in all_strategies.items() if name in selected_strategies]
 
         optimized_weights = []
@@ -962,24 +957,24 @@ class AssetAllocation:
             raise ValueError(f"Optimization method '{method}' not recognized.")
 
         for func, is_smart in optimizations:
-            
             weights, value = self.optimize_generic(
                 optimize_function,
                 func,
                 is_smart=is_smart,
                 **kwargs
             )
-            
             optimized_weights.append(weights)
             optimized_values.append(value)
 
+        # Preparar el DataFrame con los resultados
         results_df = pd.DataFrame(optimized_weights, index=optimization_names, columns=self.asset_prices.columns)
         results_df['Optimized Value'] = optimized_values
 
+        # Agregar los resultados de HRP si fue seleccionado
         if hrp_selected:
             hrp_weights = self.calculate_hrp_weights()
             hrp_df = pd.Series(hrp_weights, name='HRP')
-            hrp_df['Optimized Value'] = np.nan  
+            hrp_df['Optimized Value'] = np.nan  # Asumiendo que es un resultado único
             results_df = pd.concat([results_df, pd.DataFrame([hrp_df])])
             selected_strategies.append("HRP")
 
@@ -1077,7 +1072,7 @@ class DynamicBacktester:
 
         if not any(self.daily_values.values()):
             st.error("No data available to plot. Please run the backtest first.")
-            return go.Figure()  
+            return go.Figure()  # Retorna una figura vacía o maneja la situación de alguna otra manera
 
         max_length = max(len(values) for values in self.daily_values.values() if values)
         dates = pd.date_range(start=self.start_date, periods=max_length, freq='D')
